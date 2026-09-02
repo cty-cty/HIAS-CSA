@@ -225,6 +225,110 @@ button {
   box-shadow: 0 3px 12px rgba(30, 64, 175, 0.09);
 }
 
+.conflict-panel {
+  overflow: hidden;
+  border: 1px solid #fecdd3;
+  border-radius: 16px;
+  background: #fff7f7;
+}
+
+.conflict-panel-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-bottom: 1px solid #ffe4e6;
+  padding: 0.85rem 1rem;
+  color: #be123c;
+}
+
+.conflict-panel-title > svg {
+  width: 1rem;
+  flex: 0 0 auto;
+  margin-top: 0.12rem;
+}
+
+.conflict-panel-title div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.conflict-panel-title strong {
+  font-size: 0.86rem;
+}
+
+.conflict-panel-title span {
+  color: #9f5a68;
+  font-size: 0.72rem;
+}
+
+.conflict-list {
+  display: grid;
+  gap: 1px;
+  background: #ffe4e6;
+}
+
+.conflict-row {
+  display: grid;
+  gap: 0.45rem;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 0.8rem 1rem;
+}
+
+.conflict-courses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.conflict-courses button {
+  color: #9f1239;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: #fda4af;
+  text-underline-offset: 3px;
+}
+
+.conflict-courses button:hover {
+  color: #be123c;
+  text-decoration-color: currentColor;
+}
+
+.conflict-courses span {
+  color: #9f6a75;
+}
+
+.conflict-courses strong {
+  border-radius: 999px;
+  background: #ffe4e6;
+  padding: 0.18rem 0.45rem;
+  color: #be123c;
+  font-size: 0.66rem;
+}
+
+.conflict-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.conflict-slots span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  border-radius: 8px;
+  background: #fff1f2;
+  padding: 0.3rem 0.48rem;
+  color: #9f4356;
+  font-size: 0.69rem;
+}
+
+.conflict-slots svg {
+  width: 0.75rem;
+}
+
 .course-card {
   min-width: 0;
   border: 1px solid #e4eaf1;
@@ -340,6 +444,26 @@ button {
   width: 0.8rem;
   flex: 0 0 auto;
   color: #6f988d;
+}
+
+.course-conflict-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  border-radius: 10px;
+  background: #fff1f2;
+  padding: 0.55rem 0.65rem;
+  color: #be123c;
+  font-size: 0.71rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.course-conflict-note svg {
+  width: 0.85rem;
+  flex: 0 0 auto;
+  margin-top: 0.08rem;
 }
 
 .empty-state {

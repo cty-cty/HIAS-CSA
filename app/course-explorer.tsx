@@ -66,6 +66,19 @@ type Course = {
   schedules: Schedule[];
 };
 
+type ConflictSlot = {
+  day: string;
+  start: number;
+  end: number;
+  weeks: number[];
+};
+
+type ConflictPair = {
+  left: Course;
+  right: Course;
+  slots: ConflictSlot[];
+};
+
 type WebMcpContext = {
   registerTool: (
     tool: {
@@ -125,6 +138,48 @@ function courseConflictsInWeek(left: Course, right: Course, week: number) {
         b.weeks.includes(week),
     ),
   );
+}
+
+function getConflictSlots(left: Course, right: Course) {
+  const slots: ConflictSlot[] = [];
+  left.schedules.forEach((a) => {
+    right.schedules.forEach((b) => {
+      if (!schedulesConflict(a, b)) return;
+      const weeks = a.weeks.filter((item) => b.weeks.includes(item));
+      slots.push({
+        day: a.day,
+        start: Math.max(a.start, b.start),
+        end: Math.min(a.end, b.end),
+        weeks,
+      });
+    });
+  });
+  return slots;
+}
+
+function formatWeekRanges(weeks: number[]) {
+  if (!weeks.length) return '周次待定';
+  const sorted = [...new Set(weeks)].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let previous = sorted[0];
+  for (let index = 1; index <= sorted.length; index += 1) {
+    const current = sorted[index];
+    if (current === previous + 1) {
+      previous = current;
+      continue;
+    }
+    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    start = current;
+    previous = current;
+  }
+  return `第${ranges.join('、')}周`;
+}
+
+function formatConflictSlot(slot: ConflictSlot) {
+  const periods =
+    slot.start === slot.end ? `第${slot.start}节` : `第${slot.start}-${slot.end}节`;
+  return `${slot.day} ${periods} · ${formatWeekRanges(slot.weeks)}`;
 }
 
 function formatCredits(value: number) {
@@ -320,6 +375,26 @@ export default function CourseExplorer({
     });
     return result;
   }, [selectedCourses]);
+
+  const conflictPairs = useMemo<ConflictPair[]>(() => {
+    const pairs: ConflictPair[] = [];
+    selectedCourses.forEach((course, index) => {
+      selectedCourses.slice(index + 1).forEach((other) => {
+        const slots = getConflictSlots(course, other);
+        if (slots.length) pairs.push({ left: course, right: other, slots });
+      });
+    });
+    return pairs;
+  }, [selectedCourses]);
+
+  const conflictPeers = useMemo(() => {
+    const peers = new Map<string, Course[]>();
+    conflictPairs.forEach(({ left, right }) => {
+      peers.set(left.id, [...(peers.get(left.id) ?? []), right]);
+      peers.set(right.id, [...(peers.get(right.id) ?? []), left]);
+    });
+    return peers;
+  }, [conflictPairs]);
 
   const currentWeekConflicts = useMemo(() => {
     const result = new Set<string>();
@@ -589,7 +664,7 @@ export default function CourseExplorer({
               </Button>
               {conflictingIds.size > 0 && (
                 <Badge className="h-8 rounded-lg bg-rose-50 px-3 text-rose-700" variant="secondary">
-                  {conflictingIds.size} 门已选课程存在冲突
+                  {conflictPairs.length} 组课程冲突
                 </Badge>
               )}
             </div>
@@ -610,6 +685,37 @@ export default function CourseExplorer({
               </button>
             </div>
           </div>
+
+          {conflictPairs.length > 0 && (
+            <div className="conflict-panel mt-4" role="alert">
+              <div className="conflict-panel-title">
+                <Zap />
+                <div>
+                  <strong>发现 {conflictPairs.length} 组时间冲突</strong>
+                  <span>下面这些课程不能同时按当前安排上课</span>
+                </div>
+              </div>
+              <div className="conflict-list">
+                {conflictPairs.map(({ left, right, slots }) => (
+                  <div className="conflict-row" key={`${left.id}-${right.id}`}>
+                    <div className="conflict-courses">
+                      <button onClick={() => setDetailCourse(left)} type="button">{left.name}</button>
+                      <span>与</span>
+                      <button onClick={() => setDetailCourse(right)} type="button">{right.name}</button>
+                      <strong>冲突</strong>
+                    </div>
+                    <div className="conflict-slots">
+                      {slots.map((slot, index) => (
+                        <span key={`${formatConflictSlot(slot)}-${index}`}>
+                          <Clock3 /> {formatConflictSlot(slot)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {view === 'courses' ? (
@@ -631,6 +737,7 @@ export default function CourseExplorer({
                 {filteredCourses.slice(0, visibleCount).map((course) => {
                   const selected = selectedIds.includes(course.id);
                   const conflict = selected && conflictingIds.has(course.id);
+                  const peers = conflictPeers.get(course.id) ?? [];
                   return (
                     <article
                       className={`course-card ${selected ? 'course-card-selected' : ''} ${conflict ? 'course-card-conflict' : ''}`}
@@ -697,6 +804,14 @@ export default function CourseExplorer({
                         <span><Presentation /> {course.teachingMode || '授课方式待定'}</span>
                         <span><Clock3 /> {course.hours || '学时待定'}</span>
                       </div>
+                      {conflict && (
+                        <div className="course-conflict-note">
+                          <Zap />
+                          <span>
+                            与 {peers.map((peer) => peer.name).join('、')} 的上课时间冲突
+                          </span>
+                        </div>
+                      )}
                       <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5">
                         <ScheduleLines schedules={course.schedules} />
                       </div>
