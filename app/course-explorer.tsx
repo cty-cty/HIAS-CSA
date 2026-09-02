@@ -3,16 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
+  BarChart3,
   CalendarDays,
   ClipboardList,
   ChevronDown,
   ClipboardCheck,
   Clock3,
   Download,
+  FileSpreadsheet,
   GraduationCap,
   Info,
   MapPin,
   Presentation,
+  Repeat2,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -82,6 +85,15 @@ type ConflictPair = {
   slots: ConflictSlot[];
 };
 
+type ExamBucketId = 'closed' | 'open' | 'report' | 'practical' | 'other';
+
+type ExamBucket = {
+  id: ExamBucketId;
+  label: string;
+  description: string;
+  tone: string;
+};
+
 type WebMcpContext = {
   registerTool: (
     tool: {
@@ -93,7 +105,7 @@ type WebMcpContext = {
         readOnlyHint: boolean;
         untrustedContentHint: boolean;
       };
-      execute: (input: unknown) => unknown | Promise<unknown>;
+      execute: (input: unknown) => unknown;
     },
     options: { signal: AbortSignal },
   ) => void | Promise<void>;
@@ -101,6 +113,13 @@ type WebMcpContext = {
 
 const DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const PAGE_SIZE = 24;
+const EXAM_BUCKETS: ExamBucket[] = [
+  { id: 'closed', label: '闭卷考试', description: '需要集中复习与笔试准备', tone: 'rose' },
+  { id: 'open', label: '开卷考试', description: '重在资料整理与理解应用', tone: 'blue' },
+  { id: 'report', label: '报告 / 论文', description: '需要持续阅读、写作或汇报', tone: 'amber' },
+  { id: 'practical', label: '实践 / 技能', description: '以操作、设计或技能考核为主', tone: 'emerald' },
+  { id: 'other', label: '其他考核', description: '以课程文件中的具体说明为准', tone: 'slate' },
+];
 const COURSE_COLORS = [
   ['#dff2ee', '#147d6f'],
   ['#e9e5fb', '#6251a4'],
@@ -128,6 +147,18 @@ function coursesConflict(left: Course, right: Course) {
   return left.schedules.some((a) =>
     right.schedules.some((b) => schedulesConflict(a, b)),
   );
+}
+
+function courseBaseName(name: string) {
+  return name.replace(/[-—－]?\d+班$/, '');
+}
+
+function getExamBucket(examMode: string): ExamBucketId {
+  if (/闭卷/.test(examMode)) return 'closed';
+  if (/开卷/.test(examMode)) return 'open';
+  if (/报告|论文|综述|汇报|大作业/.test(examMode)) return 'report';
+  if (/实践|技能|实验|设计|作品|答辩/.test(examMode)) return 'practical';
+  return 'other';
 }
 
 function courseConflictsInWeek(left: Course, right: Course, week: number) {
@@ -223,13 +254,16 @@ export default function CourseExplorer({
   const [storageReady, setStorageReady] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
-  const [view, setView] = useState<'courses' | 'guide' | 'timetable'>('courses');
+  const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>('courses');
   const [programPlanId, setProgramPlanId] = useState('optical-master');
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
   const selectedIdsRef = useRef(selectedIds);
-  selectedIdsRef.current = selectedIds;
+
+  useEffect(() => {
+    selectedIdsRef.current = selectedIds;
+  }, [selectedIds]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem('ucas-hangzhou-selected');
@@ -399,6 +433,32 @@ export default function CourseExplorer({
         activePlan.professionalCourses.includes(course.name),
     )
     .reduce((sum, course) => sum + course.credits, 0);
+  const examGroups = useMemo(
+    () =>
+      EXAM_BUCKETS.map((bucket) => ({
+        ...bucket,
+        courses: selectedCourses.filter(
+          (course) => getExamBucket(course.examMode) === bucket.id,
+        ),
+      })),
+    [selectedCourses],
+  );
+  const closedExamCount = examGroups.find((group) => group.id === 'closed')?.courses.length ?? 0;
+  const examPressureMessage = !selectedCourses.length
+    ? '选择课程后，这里会分析考核方式结构。'
+    : closedExamCount >= 3
+      ? `已选课程中有 ${closedExamCount} 门闭卷考试，建议预留集中复习时间。`
+      : closedExamCount > 0
+        ? `已选课程中有 ${closedExamCount} 门闭卷考试，其余考核可分散准备。`
+        : '当前已选课程没有标注为闭卷考试，但仍需关注报告、实践和其他考核。';
+  const programCourseGroups: Array<{
+    title: string;
+    courses: Course[];
+    kind: 'core' | 'professional';
+  }> = [
+    { title: '本学期方案核心课', courses: planCoreCourses, kind: 'core' },
+    { title: '本学期方案专业课', courses: planProfessionalCourses, kind: 'professional' },
+  ];
 
   const conflictingIds = useMemo(() => {
     const result = new Set<string>();
@@ -509,6 +569,28 @@ export default function CourseExplorer({
     );
   }
 
+  function replaceCourse(sourceId: string, replacementId: string) {
+    setSelectedIds((current) => [
+      ...current.filter((id) => id !== sourceId && id !== replacementId),
+      replacementId,
+    ]);
+  }
+
+  function getConflictAlternatives(source: Course) {
+    const baseName = courseBaseName(source.name);
+    return initialCourses.filter((candidate) => {
+      if (candidate.id === source.id || courseBaseName(candidate.name) !== baseName) {
+        return false;
+      }
+      return selectedCourses.every(
+        (selected) =>
+          selected.id === source.id ||
+          selected.id === candidate.id ||
+          !coursesConflict(candidate, selected),
+      );
+    });
+  }
+
   function clearFilters() {
     setQuery('');
     setCollege('全部院系');
@@ -576,6 +658,7 @@ export default function CourseExplorer({
                 从培养要求、考试方式到每周时段，把选课信息摊开来看。收藏备选课程，系统会帮你检查时间冲突。
               </p>
               <div className="hero-meta mt-7">
+                <span><FileSpreadsheet /> 秋季课表数据</span>
                 <span><BookOpen /> {initialCourses.length} 门课程</span>
                 <span><GraduationCap /> {subjects.length} 个学科/专业</span>
                 <span><ClipboardList /> {PROGRAM_PLANS.length} 个培养方向</span>
@@ -626,10 +709,11 @@ export default function CourseExplorer({
 
         <section className="relative z-20 mt-4 rounded-[24px] border border-[#e1e5df] bg-white/94 p-4 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-5">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.35fr)_repeat(4,minmax(150px,.62fr))_auto]">
-            <label className="relative block">
+            <label className="relative block" htmlFor="course-search">
               <span className="sr-only">搜索课程</span>
               <Search className="absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
               <Input
+                id="course-search"
                 className="h-11 rounded-xl border-slate-200 bg-slate-50/80 pl-10 shadow-none focus-visible:border-blue-400"
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索课程名 / 编码 / 教师 / 教室…"
@@ -727,7 +811,7 @@ export default function CourseExplorer({
                 <b>学分</b>
                 <small>{selectedCourses.length} 门课</small>
               </div>
-              <div className="flex rounded-xl bg-slate-100 p-1">
+              <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1 sm:flex">
                 <button
                   className={`view-tab ${view === 'courses' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('courses')}
@@ -741,6 +825,13 @@ export default function CourseExplorer({
                   type="button"
                 >
                   <ClipboardList /> 培养要求
+                </button>
+                <button
+                  className={`view-tab ${view === 'exams' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('exams')}
+                  type="button"
+                >
+                  <BarChart3 /> 考试压力
                 </button>
                 <button
                   className={`view-tab ${view === 'timetable' ? 'view-tab-active' : ''}`}
@@ -763,7 +854,11 @@ export default function CourseExplorer({
                 </div>
               </div>
               <div className="conflict-list">
-                {conflictPairs.map(({ left, right, slots }) => (
+                {conflictPairs.map(({ left, right, slots }) => {
+                  const alternatives = [left, right]
+                    .map((source) => ({ source, courses: getConflictAlternatives(source) }))
+                    .filter((group) => group.courses.length > 0);
+                  return (
                   <div className="conflict-row" key={`${left.id}-${right.id}`}>
                     <div className="conflict-courses">
                       <button onClick={() => setDetailCourse(left)} type="button">{left.name}</button>
@@ -778,8 +873,35 @@ export default function CourseExplorer({
                         </span>
                       ))}
                     </div>
+                    {alternatives.length > 0 ? (
+                      <div className="conflict-alternatives">
+                        <div className="conflict-alternatives-title">
+                          <Repeat2 /> 无冲突替代班次
+                        </div>
+                        {alternatives.map(({ source, courses }) => (
+                          <div className="alternative-group" key={source.id}>
+                            <span>替换 {source.name}</span>
+                            <div>
+                              {courses.slice(0, 4).map((candidate) => (
+                                <button
+                                  key={candidate.id}
+                                  onClick={() => replaceCourse(source.id, candidate.id)}
+                                  type="button"
+                                >
+                                  换成 {candidate.name}
+                                  <small>{candidate.schedules.map((item) => item.periodText).join('、')}</small>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="conflict-no-alternative">暂无可直接替换的同课无冲突班次</div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -831,6 +953,9 @@ export default function CourseExplorer({
                             )}
                             <Badge className="bg-slate-100 text-slate-600" variant="secondary">
                               {formatCredits(course.credits)} 学分
+                            </Badge>
+                            <Badge className="source-badge" variant="secondary">
+                              <FileSpreadsheet /> 秋季课表
                             </Badge>
                             {conflict && (
                               <Badge className="bg-rose-50 text-rose-700" variant="secondary">
@@ -960,10 +1085,10 @@ export default function CourseExplorer({
                 <strong>≥{activePlan.totalCredits}</strong>
                 <span>毕业总学分</span>
               </div>
-              <div className="program-selected-total">
-                <strong>{formatCredits(selectedPlanCredits)}</strong>
-                <span>当前已选方案课程学分</span>
-              </div>
+	              <div className="program-selected-total">
+	                <strong>{formatCredits(selectedPlanCredits)}</strong>
+	                <span>本学期已选方案课学分</span>
+	              </div>
             </div>
 
             <div className="requirement-grid mt-4">
@@ -982,49 +1107,47 @@ export default function CourseExplorer({
             </div>
 
             <div className="selection-rules mt-4">
-              <div className="rule-card">
-                <Target />
-                <div>
-                  <span>核心课选课要求</span>
-                  <strong>至少 {activePlan.coreMinimum} 门</strong>
-                  <p>当前已选 {selectedPlanCoreCount} 门 · 本学期可选 {planCoreCourses.length} 门</p>
-                </div>
-                <b className={selectedPlanCoreCount >= activePlan.coreMinimum ? 'rule-complete' : ''}>
-                  {selectedPlanCoreCount}/{activePlan.coreMinimum}
-                </b>
-              </div>
-              <div className="rule-card">
-                <Target />
-                <div>
-                  <span>专业课选课要求</span>
-                  <strong>至少 {activePlan.professionalMinimum} 门</strong>
-                  <p>当前已选 {selectedPlanProfessionalCount} 门 · 本学期可选 {planProfessionalCourses.length} 门</p>
-                </div>
-                <b className={selectedPlanProfessionalCount >= activePlan.professionalMinimum ? 'rule-complete' : ''}>
-                  {selectedPlanProfessionalCount}/{activePlan.professionalMinimum}
-                </b>
-              </div>
-            </div>
+	              <div className="rule-card">
+	                <Target />
+	                <div>
+	                  <span>本学期核心课覆盖</span>
+	                  <strong>已选 {selectedPlanCoreCount} / 可选 {planCoreCourses.length} 门</strong>
+	                  <p>培养方案要求：至少 {activePlan.coreMinimum} 门作为学位课</p>
+	                </div>
+	                <b>{selectedPlanCoreCount}/{planCoreCourses.length}</b>
+	              </div>
+	              <div className="rule-card">
+	                <Target />
+	                <div>
+	                  <span>本学期专业课覆盖</span>
+	                  <strong>已选 {selectedPlanProfessionalCount} / 可选 {planProfessionalCourses.length} 门</strong>
+	                  <p>培养方案要求：至少 {activePlan.professionalMinimum} 门作为学位课</p>
+	                </div>
+	                <b>{selectedPlanProfessionalCount}/{planProfessionalCourses.length}</b>
+	              </div>
+	            </div>
+
+	            <div className="coverage-note mt-4">
+	              <Info />
+	              <span>这里统计的是本学期已选课程对培养方案课程库的覆盖情况，不代表课程已经被认定为学位课，也不等同于毕业完成度。</span>
+	            </div>
 
             {activePlan.note && (
               <div className="program-note mt-4"><Info /> {activePlan.note}</div>
             )}
 
             <div className="mt-7 grid gap-5 xl:grid-cols-2">
-              {[
-                ['本学期方案核心课', planCoreCourses, 'core'],
-                ['本学期方案专业课', planProfessionalCourses, 'professional'],
-              ].map(([title, courses, kind]) => (
-                <div className="program-course-group" key={String(title)}>
+              {programCourseGroups.map(({ title, courses, kind }) => (
+                <div className="program-course-group" key={title}>
                   <div className="program-course-group-title">
                     <div>
-                      <h3>{String(title)}</h3>
+                      <h3>{title}</h3>
                       <p>已按培养方案课程库与本学期正式课表交叉匹配</p>
                     </div>
-                    <Badge variant="secondary">{(courses as Course[]).length} 门</Badge>
+                    <Badge variant="secondary">{courses.length} 门</Badge>
                   </div>
                   <div className="program-course-list">
-                    {(courses as Course[]).map((course) => {
+                    {courses.map((course) => {
                       const selected = selectedIds.includes(course.id);
                       return (
                         <div className="program-course-row" key={course.id}>
@@ -1045,7 +1168,7 @@ export default function CourseExplorer({
                         </div>
                       );
                     })}
-                    {!(courses as Course[]).length && (
+                    {!courses.length && (
                       <div className="program-course-empty">本学期课表中没有匹配到该类课程。</div>
                     )}
                   </div>
@@ -1062,6 +1185,69 @@ export default function CourseExplorer({
                 培养要求与课程库依据 PPT；本学期课程的学分、教师、时间和教室仍以秋季课表为准。
                 {activePlan.program === '物理电子学' && ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
               </span>
+            </div>
+          </section>
+        ) : view === 'exams' ? (
+          <section className="py-7">
+            <div className="mb-5">
+              <p className="text-sm text-slate-500">ASSESSMENT LOAD</p>
+              <h2 className="mt-1 text-2xl font-bold tracking-tight">考试压力视图</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                按秋季课表中的考试方式整理已选课程，帮助你平衡闭卷、报告与实践任务。
+              </p>
+            </div>
+
+            <div className="exam-summary">
+              <div className="exam-summary-icon"><BarChart3 /></div>
+              <div>
+                <span>当前考核结构提示</span>
+                <strong>{examPressureMessage}</strong>
+              </div>
+              <div className="exam-summary-total">
+                <b>{selectedCourses.length}</b>
+                <span>门已选课程</span>
+              </div>
+            </div>
+
+            {selectedCourses.length ? (
+              <div className="exam-grid mt-5">
+                {examGroups.map((group) => {
+                  const credits = group.courses.reduce((sum, course) => sum + course.credits, 0);
+                  return (
+                    <article className="exam-card" data-tone={group.tone} key={group.id}>
+                      <div className="exam-card-head">
+                        <div>
+                          <span>{group.label}</span>
+                          <strong>{group.courses.length} 门</strong>
+                        </div>
+                        <b>{formatCredits(credits)} 学分</b>
+                      </div>
+                      <p>{group.description}</p>
+                      <div className="exam-course-list">
+                        {group.courses.map((course) => (
+                          <button key={course.id} onClick={() => setDetailCourse(course)} type="button">
+                            <span>{course.name}</span>
+                            <small>{course.examMode || '考试方式待定'}</small>
+                          </button>
+                        ))}
+                        {!group.courses.length && <span className="exam-course-empty">暂无已选课程</span>}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="empty-state mt-5">
+                <BarChart3 />
+                <h3>还没有可分析的课程</h3>
+                <p>先选择课程，再回来查看闭卷、开卷、报告和实践考核的分布。</p>
+                <Button onClick={() => setView('courses')}>去选择课程</Button>
+              </div>
+            )}
+
+            <div className="source-compare-note mt-5">
+              <FileSpreadsheet />
+              <span>考试方式来自 2026 年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量。</span>
             </div>
           </section>
         ) : (
@@ -1185,12 +1371,15 @@ export default function CourseExplorer({
           {detailCourse && (
             <>
               <SheetHeader className="border-b border-slate-100 p-6 pr-14">
-                <div className="mb-2 flex flex-wrap gap-2">
+	                <div className="mb-2 flex flex-wrap gap-2">
                   <Badge className="bg-blue-50 text-blue-700" variant="secondary">
                     {detailCourse.category}
                   </Badge>
-                  <Badge variant="outline">{detailCourse.level}</Badge>
-                </div>
+	                  <Badge variant="outline">{detailCourse.level}</Badge>
+	                  <Badge className="source-badge" variant="secondary">
+	                    <FileSpreadsheet /> 秋季课表数据
+	                  </Badge>
+	                </div>
                 <SheetTitle className="text-2xl font-bold leading-tight">
                   {detailCourse.name}
                 </SheetTitle>
