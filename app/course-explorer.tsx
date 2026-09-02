@@ -362,6 +362,13 @@ export default function CourseExplorer({
     (sum, course) => sum + course.credits,
     0,
   );
+  const selectedCreditBreakdown = useMemo(() => {
+    const totals = new Map<string, number>();
+    selectedCourses.forEach((course) => {
+      totals.set(course.category, (totals.get(course.category) ?? 0) + course.credits);
+    });
+    return [...totals.entries()].sort((left, right) => right[1] - left[1]);
+  }, [selectedCourses]);
 
   const conflictingIds = useMemo(() => {
     const result = new Set<string>();
@@ -547,11 +554,24 @@ export default function CourseExplorer({
             <aside className="plan-summary">
               <div>
                 <p>MY COURSE PLAN</p>
-                <div className="mt-3 flex items-end gap-2">
-                  <strong>{selectedCourses.length}</strong>
-                  <span>门已选 · {formatCredits(selectedCredits)} 学分</span>
+                <div className="credit-spotlight mt-3">
+                  <div className="flex items-end gap-2">
+                    <strong>{formatCredits(selectedCredits)}</strong>
+                    <span>学分</span>
+                  </div>
+                  <div className="plan-course-count">
+                    已选 <b>{selectedCourses.length}</b> 门课程
+                  </div>
                 </div>
-                <div className="plan-progress mt-4"><span style={{ width: `${Math.min(100, selectedCourses.length * 8)}%` }} /></div>
+                {selectedCreditBreakdown.length > 0 ? (
+                  <div className="credit-breakdown mt-4">
+                    {selectedCreditBreakdown.slice(0, 3).map(([label, credits]) => (
+                      <span key={label}>{label} {formatCredits(credits)}</span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="credit-empty mt-4">选择课程后，这里会汇总学分</div>
+                )}
               </div>
               <div className="mt-6 grid grid-cols-2 gap-2.5">
                 <Button
@@ -668,21 +688,30 @@ export default function CourseExplorer({
                 </Badge>
               )}
             </div>
-            <div className="flex rounded-xl bg-slate-100 p-1">
-              <button
-                className={`view-tab ${view === 'courses' ? 'view-tab-active' : ''}`}
-                onClick={() => setView('courses')}
-                type="button"
-              >
-                <BookOpen /> 课程列表
-              </button>
-              <button
-                className={`view-tab ${view === 'timetable' ? 'view-tab-active' : ''}`}
-                onClick={() => setView('timetable')}
-                type="button"
-              >
-                <CalendarDays /> 模拟课表
-              </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="selection-credit-pill" aria-live="polite">
+                <Sparkles />
+                <span>已选总计</span>
+                <strong>{formatCredits(selectedCredits)}</strong>
+                <b>学分</b>
+                <small>{selectedCourses.length} 门课</small>
+              </div>
+              <div className="flex rounded-xl bg-slate-100 p-1">
+                <button
+                  className={`view-tab ${view === 'courses' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('courses')}
+                  type="button"
+                >
+                  <BookOpen /> 课程列表
+                </button>
+                <button
+                  className={`view-tab ${view === 'timetable' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('timetable')}
+                  type="button"
+                >
+                  <CalendarDays /> 模拟课表
+                </button>
+              </div>
             </div>
           </div>
 

@@ -161,31 +161,96 @@ button {
 }
 
 .plan-summary strong {
-  color: #294a43;
-  font-size: 3.4rem;
+  color: #234a42;
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.07em;
   line-height: 0.9;
 }
 
-.plan-summary div > span {
+.credit-spotlight > div:first-child > span {
+  margin-bottom: 0.35rem;
+  color: #4f7068;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.plan-course-count {
+  margin-top: 0.65rem;
   color: #71857f;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   font-weight: 600;
 }
 
-.plan-progress {
-  height: 7px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e8efeb;
+.plan-course-count b {
+  color: #315f57;
+  font-size: 0.95rem;
 }
 
-.plan-progress span {
-  display: block;
-  height: 100%;
-  min-width: 4%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #6aab9a, #f0aa72);
-  transition: width 220ms ease;
+.credit-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.credit-breakdown span {
+  border: 1px solid #dbe8e2;
+  border-radius: 999px;
+  background: #f4faf7;
+  padding: 0.28rem 0.52rem;
+  color: #547269;
+  font-size: 0.65rem;
+  font-weight: 650;
+}
+
+.credit-empty {
+  border-radius: 10px;
+  background: #f4f7f5;
+  padding: 0.5rem 0.65rem;
+  color: #8b9b96;
+  font-size: 0.69rem;
+}
+
+.selection-credit-pill {
+  display: inline-flex;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.34rem;
+  border: 1px solid #cae0d8;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #edf8f3, #fffaf0);
+  padding: 0 0.72rem;
+  color: #55716a;
+  box-shadow: 0 4px 14px rgba(61, 96, 84, 0.06);
+}
+
+.selection-credit-pill svg {
+  width: 0.9rem;
+  color: #4f907e;
+}
+
+.selection-credit-pill span,
+.selection-credit-pill b,
+.selection-credit-pill small {
+  font-size: 0.71rem;
+}
+
+.selection-credit-pill strong {
+  color: #235e51;
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.selection-credit-pill b {
+  color: #315f57;
+}
+
+.selection-credit-pill small {
+  margin-left: 0.2rem;
+  border-left: 1px solid #d5e4de;
+  padding-left: 0.52rem;
+  color: #84958f;
 }
 
 .filter-chip {
@@ -648,6 +713,11 @@ button {
 
   .plan-summary {
     min-height: 185px;
+  }
+
+  .selection-credit-pill {
+    width: 100%;
+    justify-content: center;
   }
 
   .course-card {
