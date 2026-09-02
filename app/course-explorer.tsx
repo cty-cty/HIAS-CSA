@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   CalendarDays,
-  Check,
   ChevronDown,
+  ClipboardCheck,
   Clock3,
   Download,
   GraduationCap,
   Info,
   MapPin,
+  Presentation,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -157,6 +158,7 @@ export default function CourseExplorer({
 }) {
   const [query, setQuery] = useState('');
   const [college, setCollege] = useState('全部院系');
+  const [subject, setSubject] = useState('全部学科/专业');
   const [category, setCategory] = useState('全部类别');
   const [day, setDay] = useState('全部星期');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -283,7 +285,7 @@ export default function CourseExplorer({
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [query, college, category, day, onlySelected, onlyNoConflict]);
+  }, [query, college, subject, category, day, onlySelected, onlyNoConflict]);
 
   const colleges = useMemo(
     () => [...new Set(initialCourses.map((course) => course.college))].sort(),
@@ -291,6 +293,10 @@ export default function CourseExplorer({
   );
   const categories = useMemo(
     () => [...new Set(initialCourses.map((course) => course.category))].sort(),
+    [initialCourses],
+  );
+  const subjects = useMemo(
+    () => [...new Set(initialCourses.map((course) => course.subject))].sort(),
     [initialCourses],
   );
   const selectedCourses = useMemo(
@@ -347,6 +353,8 @@ export default function CourseExplorer({
           .includes(normalized);
       const matchesCollege =
         college === '全部院系' || course.college === college;
+      const matchesSubject =
+        subject === '全部学科/专业' || course.subject === subject;
       const matchesCategory =
         category === '全部类别' || course.category === category;
       const matchesDay =
@@ -361,6 +369,7 @@ export default function CourseExplorer({
       return (
         matchesQuery &&
         matchesCollege &&
+        matchesSubject &&
         matchesCategory &&
         matchesDay &&
         matchesSelected &&
@@ -371,6 +380,7 @@ export default function CourseExplorer({
     initialCourses,
     query,
     college,
+    subject,
     category,
     day,
     onlySelected,
@@ -390,6 +400,7 @@ export default function CourseExplorer({
   function clearFilters() {
     setQuery('');
     setCollege('全部院系');
+    setSubject('全部学科/专业');
     setCategory('全部类别');
     setDay('全部星期');
     setOnlySelected(false);
@@ -436,60 +447,59 @@ export default function CourseExplorer({
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f3f6fa] text-slate-900">
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-slate-900">
       <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8">
-        <section className="hero-panel relative overflow-hidden rounded-[28px] px-6 py-7 text-white shadow-[0_24px_70px_rgba(20,48,88,.18)] sm:px-9 sm:py-9">
-          <div className="hero-orbit hero-orbit-one" />
-          <div className="hero-orbit hero-orbit-two" />
-          <div className="relative z-10 grid gap-8 lg:grid-cols-[1fr_auto]">
+        <section className="hero-panel relative overflow-hidden rounded-[30px] border border-[#dce5de] px-6 py-7 shadow-[0_22px_65px_rgba(61,83,72,.10)] sm:px-9 sm:py-9">
+          <div className="hero-doodle hero-doodle-one" />
+          <div className="hero-doodle hero-doodle-two" />
+          <div className="relative z-10 grid gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
             <div>
-              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.24em] text-blue-200">
-                UCAS · COURSE COMPASS
+              <p className="mb-4 inline-flex rounded-full border border-[#b9d9cf] bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-[#39766c]">
+                2026 FALL · UCAS
               </p>
-              <h1 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
-                2026 秋季学期选课助手
+              <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-[-0.03em] text-[#1f3732] sm:text-[2.65rem]">
+                把 {initialCourses.length} 门课，排成属于你的这一周
               </h1>
-              <p className="mt-3 max-w-3xl text-sm leading-6 text-blue-100/90 sm:text-base">
-                根据你文件夹中的正式课表整理，可筛选课程、收藏方案、按周查看课表，并自动识别时间冲突。
+              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#60736e] sm:text-base">
+                从学科专业、考试方式到每周时段，把选课信息摊开来看。收藏备选课程，系统会帮你检查时间冲突。
               </p>
-            </div>
-            <div className="flex flex-wrap items-start gap-3 lg:w-56 lg:flex-col">
-              <Button
-                className="h-11 flex-1 border border-white/15 bg-white/12 px-4 text-white hover:bg-white/20 lg:w-full"
-                onClick={() => setView('timetable')}
-              >
-                <CalendarDays /> 查看我的课表
-              </Button>
-              <Button
-                className="h-11 flex-1 border border-white/15 bg-white/12 px-4 text-white hover:bg-white/20 lg:w-full"
-                onClick={exportSelected}
-                disabled={!selectedCourses.length}
-              >
-                <Download /> 导出已选 CSV
-              </Button>
-            </div>
-          </div>
-
-          <div className="relative z-10 mt-8 grid grid-cols-2 gap-3 lg:max-w-4xl lg:grid-cols-4">
-            {[
-              [initialCourses.length, '课程记录', BookOpen],
-              [colleges.length, '开课院系', GraduationCap],
-              [formatCredits(selectedCredits), '已选学分', Sparkles],
-              [selectedCourses.length, '已选课程', Check],
-            ].map(([value, label, Icon]) => (
-              <div className="hero-stat" key={String(label)}>
-                <Icon className="size-4 text-blue-200" />
-                <div>
-                  <div className="text-2xl font-bold leading-none">{value}</div>
-                  <div className="mt-1 text-xs text-blue-100/75">{label}</div>
-                </div>
+              <div className="hero-meta mt-7">
+                <span><BookOpen /> {initialCourses.length} 门课程</span>
+                <span><GraduationCap /> {subjects.length} 个学科/专业</span>
+                <span><Sparkles /> 自动冲突检查</span>
               </div>
-            ))}
+            </div>
+            <aside className="plan-summary">
+              <div>
+                <p>MY COURSE PLAN</p>
+                <div className="mt-3 flex items-end gap-2">
+                  <strong>{selectedCourses.length}</strong>
+                  <span>门已选 · {formatCredits(selectedCredits)} 学分</span>
+                </div>
+                <div className="plan-progress mt-4"><span style={{ width: `${Math.min(100, selectedCourses.length * 8)}%` }} /></div>
+              </div>
+              <div className="mt-6 grid grid-cols-2 gap-2.5">
+                <Button
+                  className="h-11 rounded-xl bg-[#315f57] text-white hover:bg-[#274f48]"
+                  onClick={() => setView('timetable')}
+                >
+                  <CalendarDays /> 我的课表
+                </Button>
+                <Button
+                  className="h-11 rounded-xl border-[#d6ded9] bg-white text-[#49645e] hover:bg-[#f4f7f5]"
+                  onClick={exportSelected}
+                  disabled={!selectedCourses.length}
+                  variant="outline"
+                >
+                  <Download /> 导出 CSV
+                </Button>
+              </div>
+            </aside>
           </div>
         </section>
 
-        <section className="relative z-20 -mt-1 rounded-[26px] border border-white/80 bg-white/92 p-4 shadow-[0_18px_50px_rgba(20,48,88,.08)] backdrop-blur sm:p-5 lg:-mt-4">
-          <div className="grid gap-3 xl:grid-cols-[minmax(300px,1.5fr)_repeat(3,minmax(170px,.65fr))_auto]">
+        <section className="relative z-20 mt-4 rounded-[24px] border border-[#e1e5df] bg-white/94 p-4 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.35fr)_repeat(4,minmax(150px,.62fr))_auto]">
             <label className="relative block">
               <span className="sr-only">搜索课程</span>
               <Search className="absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
@@ -508,6 +518,19 @@ export default function CourseExplorer({
             >
                 <NativeSelectOption value="全部院系">全部院系</NativeSelectOption>
                 {colleges.map((item) => (
+                  <NativeSelectOption key={item} value={item}>
+                    {item}
+                  </NativeSelectOption>
+                ))}
+            </NativeSelect>
+            <NativeSelect
+              aria-label="按所属学科或专业筛选"
+              className="w-full [&>select]:h-11"
+              onChange={(event) => setSubject(event.target.value)}
+              value={subject}
+            >
+                <NativeSelectOption value="全部学科/专业">全部学科/专业</NativeSelectOption>
+                {subjects.map((item) => (
                   <NativeSelectOption key={item} value={item}>
                     {item}
                   </NativeSelectOption>
@@ -619,6 +642,9 @@ export default function CourseExplorer({
                             <Badge className="bg-blue-50 text-blue-700" variant="secondary">
                               {course.category}
                             </Badge>
+                            <Badge className="bg-emerald-50 text-emerald-700" variant="secondary">
+                              {course.level}
+                            </Badge>
                             <Badge className="bg-slate-100 text-slate-600" variant="secondary">
                               {formatCredits(course.credits)} 学分
                             </Badge>
@@ -665,6 +691,11 @@ export default function CourseExplorer({
                             <small>{course.college}</small>
                           </span>
                         </div>
+                      </div>
+                      <div className="course-extra mt-4">
+                        <span><ClipboardCheck /> {course.examMode || '考试方式待定'}</span>
+                        <span><Presentation /> {course.teachingMode || '授课方式待定'}</span>
+                        <span><Clock3 /> {course.hours || '学时待定'}</span>
                       </div>
                       <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs leading-5">
                         <ScheduleLines schedules={course.schedules} />
