@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BookOpen,
   CalendarDays,
+  ClipboardList,
   ChevronDown,
   ClipboardCheck,
   Clock3,
@@ -16,6 +17,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  Target,
   Users,
   X,
   Zap,
@@ -35,6 +37,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { PROGRAM_PLANS } from '@/app/program-plans';
 
 type Schedule = {
   day: string;
@@ -220,7 +223,8 @@ export default function CourseExplorer({
   const [storageReady, setStorageReady] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
-  const [view, setView] = useState<'courses' | 'timetable'>('courses');
+  const [view, setView] = useState<'courses' | 'guide' | 'timetable'>('courses');
+  const [programPlanId, setProgramPlanId] = useState('optical-master');
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
@@ -369,6 +373,32 @@ export default function CourseExplorer({
     });
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
   }, [selectedCourses]);
+  const activePlan =
+    PROGRAM_PLANS.find((plan) => plan.id === programPlanId) ?? PROGRAM_PLANS[0];
+  const planCoreCourses = useMemo(
+    () => initialCourses.filter((course) => activePlan.coreCourses.includes(course.name)),
+    [activePlan, initialCourses],
+  );
+  const planProfessionalCourses = useMemo(
+    () =>
+      initialCourses.filter((course) =>
+        activePlan.professionalCourses.includes(course.name),
+      ),
+    [activePlan, initialCourses],
+  );
+  const selectedPlanCoreCount = selectedCourses.filter((course) =>
+    activePlan.coreCourses.includes(course.name),
+  ).length;
+  const selectedPlanProfessionalCount = selectedCourses.filter((course) =>
+    activePlan.professionalCourses.includes(course.name),
+  ).length;
+  const selectedPlanCredits = selectedCourses
+    .filter(
+      (course) =>
+        activePlan.coreCourses.includes(course.name) ||
+        activePlan.professionalCourses.includes(course.name),
+    )
+    .reduce((sum, course) => sum + course.credits, 0);
 
   const conflictingIds = useMemo(() => {
     const result = new Set<string>();
@@ -543,11 +573,12 @@ export default function CourseExplorer({
                 把 {initialCourses.length} 门课，排成属于你的这一周
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-[#60736e] sm:text-base">
-                从学科专业、考试方式到每周时段，把选课信息摊开来看。收藏备选课程，系统会帮你检查时间冲突。
+                从培养要求、考试方式到每周时段，把选课信息摊开来看。收藏备选课程，系统会帮你检查时间冲突。
               </p>
               <div className="hero-meta mt-7">
                 <span><BookOpen /> {initialCourses.length} 门课程</span>
                 <span><GraduationCap /> {subjects.length} 个学科/专业</span>
+                <span><ClipboardList /> {PROGRAM_PLANS.length} 个培养方向</span>
                 <span><Sparkles /> 自动冲突检查</span>
               </div>
             </div>
@@ -705,6 +736,13 @@ export default function CourseExplorer({
                   <BookOpen /> 课程列表
                 </button>
                 <button
+                  className={`view-tab ${view === 'guide' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('guide')}
+                  type="button"
+                >
+                  <ClipboardList /> 培养要求
+                </button>
+                <button
                   className={`view-tab ${view === 'timetable' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('timetable')}
                   type="button"
@@ -781,6 +819,16 @@ export default function CourseExplorer({
                             <Badge className="bg-emerald-50 text-emerald-700" variant="secondary">
                               {course.level}
                             </Badge>
+                            {activePlan.coreCourses.includes(course.name) && (
+                              <Badge className="bg-violet-50 text-violet-700" variant="secondary">
+                                方案核心课
+                              </Badge>
+                            )}
+                            {activePlan.professionalCourses.includes(course.name) && (
+                              <Badge className="bg-amber-50 text-amber-700" variant="secondary">
+                                方案专业课
+                              </Badge>
+                            )}
                             <Badge className="bg-slate-100 text-slate-600" variant="secondary">
                               {formatCredits(course.credits)} 学分
                             </Badge>
@@ -874,6 +922,147 @@ export default function CourseExplorer({
                 </Button>
               </div>
             )}
+          </section>
+        ) : view === 'guide' ? (
+          <section className="py-7">
+            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-sm text-slate-500">PROGRAM REQUIREMENTS</p>
+                <h2 className="mt-1 text-2xl font-bold tracking-tight">物光学院培养方案参考</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  根据《物光学院2026—2027年课程设置》整理，仅显示当前秋季课表中可对应的课程。
+                </p>
+              </div>
+              <label className="min-w-64 text-sm font-medium text-slate-600">
+                培养方向
+                <NativeSelect
+                  aria-label="选择培养方向"
+                  className="mt-2 w-full [&>select]:h-11"
+                  onChange={(event) => setProgramPlanId(event.target.value)}
+                  value={programPlanId}
+                >
+                  {PROGRAM_PLANS.map((plan) => (
+                    <NativeSelectOption key={plan.id} value={plan.id}>
+                      {plan.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </label>
+            </div>
+
+            <div className="program-hero">
+              <div>
+                <span>{activePlan.degree}</span>
+                <h3>{activePlan.program}</h3>
+                <p>{activePlan.code}</p>
+              </div>
+              <div className="program-credit-total">
+                <strong>≥{activePlan.totalCredits}</strong>
+                <span>毕业总学分</span>
+              </div>
+              <div className="program-selected-total">
+                <strong>{formatCredits(selectedPlanCredits)}</strong>
+                <span>当前已选方案课程学分</span>
+              </div>
+            </div>
+
+            <div className="requirement-grid mt-4">
+              {[
+                ['公共必修课', `${activePlan.publicRequiredCredits} 学分`],
+                ['专业学位课', `≥${activePlan.degreeCourseCredits} 学分`],
+                ['专业非学位课', activePlan.professionalNonDegreeCredits === null ? '不限' : `${activePlan.professionalNonDegreeCredits} 学分`],
+                ['公共选修课', `${activePlan.publicElectiveCredits} 学分`],
+                ['创新创业课', activePlan.innovationCredits === null ? '未单列' : `${activePlan.innovationCredits} 学分`],
+              ].map(([label, value]) => (
+                <div className="requirement-item" key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+
+            <div className="selection-rules mt-4">
+              <div className="rule-card">
+                <Target />
+                <div>
+                  <span>核心课选课要求</span>
+                  <strong>至少 {activePlan.coreMinimum} 门</strong>
+                  <p>当前已选 {selectedPlanCoreCount} 门 · 本学期可选 {planCoreCourses.length} 门</p>
+                </div>
+                <b className={selectedPlanCoreCount >= activePlan.coreMinimum ? 'rule-complete' : ''}>
+                  {selectedPlanCoreCount}/{activePlan.coreMinimum}
+                </b>
+              </div>
+              <div className="rule-card">
+                <Target />
+                <div>
+                  <span>专业课选课要求</span>
+                  <strong>至少 {activePlan.professionalMinimum} 门</strong>
+                  <p>当前已选 {selectedPlanProfessionalCount} 门 · 本学期可选 {planProfessionalCourses.length} 门</p>
+                </div>
+                <b className={selectedPlanProfessionalCount >= activePlan.professionalMinimum ? 'rule-complete' : ''}>
+                  {selectedPlanProfessionalCount}/{activePlan.professionalMinimum}
+                </b>
+              </div>
+            </div>
+
+            {activePlan.note && (
+              <div className="program-note mt-4"><Info /> {activePlan.note}</div>
+            )}
+
+            <div className="mt-7 grid gap-5 xl:grid-cols-2">
+              {[
+                ['本学期方案核心课', planCoreCourses, 'core'],
+                ['本学期方案专业课', planProfessionalCourses, 'professional'],
+              ].map(([title, courses, kind]) => (
+                <div className="program-course-group" key={String(title)}>
+                  <div className="program-course-group-title">
+                    <div>
+                      <h3>{String(title)}</h3>
+                      <p>已按培养方案课程库与本学期正式课表交叉匹配</p>
+                    </div>
+                    <Badge variant="secondary">{(courses as Course[]).length} 门</Badge>
+                  </div>
+                  <div className="program-course-list">
+                    {(courses as Course[]).map((course) => {
+                      const selected = selectedIds.includes(course.id);
+                      return (
+                        <div className="program-course-row" key={course.id}>
+                          <button onClick={() => setDetailCourse(course)} type="button">
+                            <strong>{course.name}</strong>
+                            <span>{course.teacher} · {formatCredits(course.credits)} 学分 · {course.schedules[0]?.periodText}</span>
+                          </button>
+                          <Button
+                            aria-label={selected ? `移除${course.name}` : `选择${course.name}`}
+                            className={selected ? 'program-select program-select-active' : 'program-select'}
+                            onClick={() => toggleCourse(course.id)}
+                            size="sm"
+                            variant="outline"
+                          >
+                            <Star className={selected ? 'fill-current' : ''} />
+                            {selected ? '已选' : '选择'}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                    {!(courses as Course[]).length && (
+                      <div className="program-course-empty">本学期课表中没有匹配到该类课程。</div>
+                    )}
+                  </div>
+                  <p className="program-course-footnote">
+                    培养方案共列 {(kind === 'core' ? activePlan.coreCourses : activePlan.professionalCourses).length} 门，未出现的课程可能安排在春季。
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="source-compare-note mt-5">
+              <Info />
+              <span>
+                培养要求与课程库依据 PPT；本学期课程的学分、教师、时间和教室仍以秋季课表为准。
+                {activePlan.program === '物理电子学' && ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
+              </span>
+            </div>
           </section>
         ) : (
           <section className="py-7">
@@ -981,7 +1170,7 @@ export default function CourseExplorer({
         )}
 
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>数据来源：文件夹内《2026年秋季学期课表 (3).xlsx》</span>
+          <span>数据来源：秋季学期课表 Excel 与物光学院课程设置 PPT</span>
           <span>本工具仅用于选课规划，最终安排以学校通知为准。</span>
         </footer>
       </div>
