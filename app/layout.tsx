@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    'https://ucas-fall-course-assistant.qwepoi147258369.chatgpt.site',
+  ),
   title: '2026 秋季学期选课助手',
   description: '基于课程 Excel 数据制作的课程筛选、收藏、课表模拟与冲突检测工具。',
   openGraph: {
