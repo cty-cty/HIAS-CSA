@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: '国科大杭州高等研究院 · 2026 秋季预选课助手',
   applicationName: '杭高院预选课助手',
   description:
-    '面向国科大杭州高等研究院研究生的秋季预选课辅助工具，支持课程筛选、培养方案核对、课表模拟、考试压力分析与冲突检测。',
+    '仅面向国科大杭州高等研究院 2026 级研一新生的秋季预选课辅助工具，支持课程筛选、培养方案核对、课表模拟、考试压力分析与冲突检测。',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/favicon.svg',
@@ -18,7 +18,8 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: '国科大杭州高等研究院预选课助手',
-    description: '2026 秋季课程筛选、培养方案核对、按周排课与冲突检测。',
+    description:
+      '仅面向国科大杭州高等研究院 2026 级研一新生，提供秋季课程筛选、培养方案核对、按周排课与冲突检测。',
     type: 'website',
     images: [
       {
@@ -32,7 +33,8 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: '国科大杭州高等研究院预选课助手',
-    description: '2026 秋季课程筛选、培养方案核对、按周排课与冲突检测。',
+    description:
+      '仅面向国科大杭州高等研究院 2026 级研一新生，提供秋季课程筛选、培养方案核对、按周排课与冲突检测。',
     images: ['/og.png'],
   },
 };
