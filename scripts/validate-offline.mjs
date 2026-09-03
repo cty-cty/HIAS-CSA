@@ -9,7 +9,7 @@ const projectDir = path.resolve(
 const outputPath = path.resolve(
   projectDir,
   '..',
-  '杭高院2026秋季预选课助手-离线版.html',
+  'HIAS-CSA-2026秋季预选课助手-离线版.html',
 );
 
 const [html, courses, fileInfo] = await Promise.all([

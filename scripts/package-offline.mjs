@@ -9,7 +9,7 @@ const projectDir = path.resolve(
 const outputPath = path.resolve(
   projectDir,
   '..',
-  '杭高院2026秋季预选课助手-离线版.html',
+  'HIAS-CSA-2026秋季预选课助手-离线版.html',
 );
 
 const [css, bundledJavaScript] = await Promise.all([
@@ -26,7 +26,7 @@ const html = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <meta name="theme-color" content="#123f6b">
-    <title>杭高院 2026 秋季预选课助手（离线版）</title>
+    <title>HIAS-CSA 2026 秋季预选课助手（离线版）</title>
     <style>${css}</style>
   </head>
   <body>

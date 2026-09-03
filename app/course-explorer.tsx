@@ -971,7 +971,7 @@ export default function CourseExplorer({
                 {activeDataset.label} · HIAS
               </p>
               <h1 className="max-w-3xl text-[2rem] font-bold leading-[1.18] tracking-[-0.035em] text-white sm:text-[2.45rem]">
-                杭高院 {activeDataset.label}预选课助手
+                {activeDataset.label}预选课助手
               </h1>
               <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
                 仅面向国科大杭州高等研究院 2026
@@ -1952,9 +1952,7 @@ export default function CourseExplorer({
         </section>
 
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            国科大杭州高等研究院 · {activeDataset.label}预选课辅助工具
-          </span>
+          <span>HIAS-CSA · {activeDataset.label}预选课辅助工具</span>
           <span>HIAS-CSA · Course Selection Assistant</span>
         </footer>
       </div>
