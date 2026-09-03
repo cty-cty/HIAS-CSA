@@ -272,6 +272,35 @@ function formatCredits(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+function formatEnrollment(course: Course) {
+  const capacity = course.capacity > 0 ? course.capacity : null;
+  const enrolled = course.enrolled > 0 ? course.enrolled : null;
+  if (capacity && enrolled !== null) {
+    return `余量 ${Math.max(0, capacity - enrolled)} / ${capacity}（非实时）`;
+  }
+  if (capacity) return `限选人数 ${capacity} · 已选人数暂无`;
+  if (enrolled !== null) return `已选人数 ${enrolled} · 限选人数未提供`;
+  return '名额信息未提供';
+}
+
+function formatEnrollmentDetail(course: Course) {
+  const capacity = course.capacity > 0 ? course.capacity : null;
+  const enrolled = course.enrolled > 0 ? course.enrolled : null;
+  if (capacity && enrolled !== null)
+    return `${enrolled} / ${capacity}（非实时）`;
+  if (capacity) return `暂无 / ${capacity}`;
+  if (enrolled !== null) return `${enrolled} / 未提供`;
+  return '暂无 / 未提供';
+}
+
+function courseColor(courseId: string) {
+  let hash = 0;
+  for (const character of courseId) {
+    hash = (hash * 31 + character.charCodeAt(0)) | 0;
+  }
+  return COURSE_COLORS[Math.abs(hash) % COURSE_COLORS.length];
+}
+
 function csvCell(value: string | number) {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
@@ -292,8 +321,86 @@ function isCourse(value: unknown): value is Course {
     typeof course.code === 'string' &&
     typeof course.name === 'string' &&
     typeof course.credits === 'number' &&
-    Array.isArray(course.schedules)
+    Number.isFinite(course.credits) &&
+    course.credits >= 0 &&
+    typeof course.englishName === 'string' &&
+    typeof course.college === 'string' &&
+    typeof course.category === 'string' &&
+    typeof course.level === 'string' &&
+    typeof course.subject === 'string' &&
+    typeof course.hours === 'string' &&
+    typeof course.capacity === 'number' &&
+    Number.isFinite(course.capacity) &&
+    course.capacity >= 0 &&
+    typeof course.enrolled === 'number' &&
+    Number.isFinite(course.enrolled) &&
+    course.enrolled >= 0 &&
+    typeof course.teachingMode === 'string' &&
+    typeof course.examMode === 'string' &&
+    typeof course.teacher === 'string' &&
+    Array.isArray(course.schedules) &&
+    course.schedules.every((schedule) => {
+      if (!schedule || typeof schedule !== 'object') return false;
+      const item = schedule as Partial<Schedule>;
+      return (
+        typeof item.day === 'string' &&
+        typeof item.dayIndex === 'number' &&
+        Number.isInteger(item.dayIndex) &&
+        item.dayIndex >= -1 &&
+        item.dayIndex <= 6 &&
+        typeof item.start === 'number' &&
+        Number.isFinite(item.start) &&
+        typeof item.end === 'number' &&
+        Number.isFinite(item.end) &&
+        item.start >= 0 &&
+        item.end >= 0 &&
+        item.start <= item.end &&
+        Array.isArray(item.weeks) &&
+        item.weeks.every(
+          (weekValue) =>
+            Number.isInteger(weekValue) && weekValue >= 1 && weekValue <= 20,
+        ) &&
+        typeof item.weeksText === 'string' &&
+        typeof item.periodText === 'string' &&
+        typeof item.room === 'string'
+      );
+    })
   );
+}
+
+function validateCourseRows(rawCourses: unknown[]) {
+  const seenIds = new Set<string>();
+  const seenCodes = new Set<string>();
+  const errors: string[] = [];
+
+  rawCourses.forEach((value, index) => {
+    const row = index + 1;
+    if (!isCourse(value)) {
+      errors.push(`第 ${row} 门课程的字段不完整或格式不正确`);
+      return;
+    }
+    if (seenIds.has(value.id))
+      errors.push(`第 ${row} 门课程的 id 重复：${value.id}`);
+    if (seenCodes.has(value.code)) {
+      errors.push(`第 ${row} 门课程的课程编码重复：${value.code}`);
+    }
+    seenIds.add(value.id);
+    seenCodes.add(value.code);
+    value.schedules.forEach((schedule, scheduleIndex) => {
+      if (schedule.dayIndex >= 0 && (schedule.start < 1 || schedule.end > 13)) {
+        errors.push(
+          `第 ${row} 门课程的第 ${scheduleIndex + 1} 条上课安排节次超出 1—13 节`,
+        );
+      }
+    });
+  });
+
+  if (errors.length) {
+    const preview = errors.slice(0, 6).join('；');
+    throw new Error(
+      `课程数据校验失败：${preview}${errors.length > 6 ? `（另有 ${errors.length - 6} 项问题）` : ''}`,
+    );
+  }
 }
 
 function termIdFromLabel(label: string) {
@@ -322,11 +429,7 @@ function parseCourseDataset(text: string, fileName: string): CourseDataset {
       '没有找到课程数组。支持直接上传 courses.json，或上传包含 courses 字段的 JSON 文件。',
     );
   }
-  if (!rawCourses.every(isCourse)) {
-    throw new Error(
-      '课程数据字段不完整，至少需要 id、code、name、credits 和 schedules。',
-    );
-  }
+  validateCourseRows(rawCourses);
 
   const baseName = fileName.replace(/\.[^/.]+$/, '').trim();
   const labelValue =
@@ -544,12 +647,27 @@ export default function CourseExplorer({
       const dataset = isGenericFile
         ? { ...parsedDataset, id: activeTermId, label: activeDataset.label }
         : parsedDataset;
+      const previousDataset = availableDatasets.find(
+        (item) => item.id === dataset.id,
+      );
+      const previousSelectedIds = selectedByTerm[dataset.id] ?? [];
+      const previousSelectedCodes = new Set(
+        (previousDataset?.courses ?? [])
+          .filter((course) => previousSelectedIds.includes(course.id))
+          .map((course) => course.code),
+      );
+      const restoredIds = dataset.courses
+        .filter((course) => previousSelectedCodes.has(course.code))
+        .map((course) => course.id);
       setCustomDatasets((current) => [
         ...current.filter((item) => item.id !== dataset.id),
         dataset,
       ]);
       setActiveTermId(dataset.id);
-      setSelectedByTerm((current) => ({ ...current, [dataset.id]: [] }));
+      setSelectedByTerm((current) => ({
+        ...current,
+        [dataset.id]: restoredIds,
+      }));
       clearFilters();
       setDetailCourse(null);
       setDataMessage(
@@ -557,7 +675,10 @@ export default function CourseExplorer({
           dataset.label +
           '”的 ' +
           dataset.courses.length +
-          ' 门课程；该学期的已选课程已单独保存。',
+          ` 门课程；按课程编码保留了 ${restoredIds.length} 门已选课程。` +
+          (previousSelectedCodes.size > restoredIds.length
+            ? ` ${previousSelectedCodes.size - restoredIds.length} 门课程因编码未匹配而未恢复。`
+            : ''),
       );
     } catch (error) {
       setDataError(
@@ -1104,7 +1225,7 @@ export default function CourseExplorer({
                 <RefreshCw /> 一键更新课程数据
               </Button>
               <span className="text-right text-[0.72rem] leading-5 text-slate-500">
-                选择课程数据 JSON（可含 term、label、courses 字段）
+                选择课程数据 JSON（支持 termId、term/label、courses 字段）
               </span>
             </div>
           </div>
@@ -1501,10 +1622,7 @@ export default function CourseExplorer({
                       </div>
                       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
                         <span className="font-mono">{course.code}</span>
-                        <span>
-                          余量 {Math.max(0, course.capacity - course.enrolled)}{' '}
-                          / {course.capacity || '—'}
-                        </span>
+                        <span>{formatEnrollment(course)}</span>
                       </div>
                     </article>
                   );
@@ -1890,10 +2008,7 @@ export default function CourseExplorer({
                       course.schedules
                         .filter((schedule) => schedule.weeks.includes(week))
                         .map((schedule, scheduleIndex) => {
-                          const color =
-                            COURSE_COLORS[
-                              Number(course.id) % COURSE_COLORS.length
-                            ];
+                          const color = courseColor(course.id);
                           const conflict = currentWeekConflicts.has(course.id);
                           return (
                             <button
@@ -1999,8 +2114,8 @@ export default function CourseExplorer({
                     ['考试方式', detailCourse.examMode],
                     ['授课方式', detailCourse.teachingMode],
                     [
-                      '选课人数',
-                      `${detailCourse.enrolled} / ${detailCourse.capacity || '—'}`,
+                      '选课人数 / 限选人数',
+                      formatEnrollmentDetail(detailCourse),
                     ],
                   ].map(([label, value]) => (
                     <div className="detail-field" key={label}>
