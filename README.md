@@ -91,7 +91,7 @@ npm run build:offline
 }
 ```
 
-`publicRequiredCredits`、`professionalNonDegreeCredits` 或 `innovationCredits` 未在材料中明确时可填 `null`，网页会显示“材料未明确”或“不限”。导入后网页会显示方案来源和更新时间，并按课程名称统计本学期课表中的可匹配课程。
+`publicRequiredCredits`、`professionalNonDegreeCredits` 或 `innovationCredits` 未在材料中明确时可填 `null`，网页会显示“材料未明确”或“不限”。当前内置的人工智能、材料工程培养方向按与光电信息工程相同的公共必修要求计为 8 学分。导入后网页会显示方案来源和更新时间，并按课程名称统计本学期课表中的可匹配课程。
 
 ## 导入 WakeUp 课程表
 
