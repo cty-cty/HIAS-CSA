@@ -17,6 +17,7 @@ import {
   Presentation,
   Repeat2,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Star,
@@ -1600,9 +1601,24 @@ export default function CourseExplorer({
           </section>
         )}
 
+        <section aria-labelledby="disclaimer-title" className="disclaimer-card">
+          <div className="disclaimer-icon" aria-hidden="true">
+            <ShieldCheck />
+          </div>
+          <div>
+            <h2 id="disclaimer-title">免责声明</h2>
+            <p>
+              本工具是非官方选课辅助项目，仅用于课程查询与选课规划，不代表国科大杭州高等研究院或学校教务部门。课程、学分、培养要求、考试方式、选课人数及时间地点等信息可能存在更新延迟、遗漏或整理误差，最终请以学校教务系统、培养方案原文件和正式通知为准。
+            </p>
+            <p>
+              使用者应在正式选课前自行核验关键信息。本工具不会将个人已选课程上传到服务器，相关选择记录仅保存在当前设备的浏览器中。
+            </p>
+          </div>
+        </section>
+
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <span>国科大杭州高等研究院 · 2026 秋季预选课辅助工具</span>
-          <span>本工具仅用于选课规划，最终安排以学校通知为准。</span>
+          <span>HIAS-CSA · Course Selection Assistant</span>
         </footer>
       </div>
 
