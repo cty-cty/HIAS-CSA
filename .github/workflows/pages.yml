@@ -35,7 +35,7 @@ jobs:
         run: |
           npm run build:offline
           mkdir -p _site
-          cp ../杭高院2026秋季预选课助手-离线版.html _site/index.html
+          cp ../HIAS-CSA-2026秋季预选课助手-离线版.html _site/index.html
           sed -i 's/（离线版）//g' _site/index.html
           touch _site/.nojekyll
 
