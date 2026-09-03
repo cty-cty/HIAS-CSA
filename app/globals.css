@@ -68,9 +68,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 10% 2%, rgba(203, 232, 220, 0.58), transparent 27rem),
-    radial-gradient(circle at 92% 16%, rgba(255, 224, 195, 0.42), transparent 25rem),
-    #f7f7f2;
+    radial-gradient(circle at 10% 2%, rgba(184, 218, 218, 0.52), transparent 27rem),
+    radial-gradient(circle at 92% 16%, rgba(247, 207, 155, 0.36), transparent 25rem),
+    #f5f7f6;
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -87,8 +87,32 @@ button {
 
 .hero-panel {
   background:
-    linear-gradient(125deg, rgba(239, 249, 244, 0.98), rgba(255, 250, 239, 0.96) 58%, rgba(244, 239, 255, 0.92)),
-    #f4f8f3;
+    radial-gradient(circle at 88% 5%, rgba(38, 136, 142, 0.38), transparent 23rem),
+    linear-gradient(125deg, #123f6b 0%, #164e68 44%, #145f60 100%);
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.brand-lockup img {
+  display: block;
+  width: min(450px, 100%);
+  height: auto;
+}
+
+.brand-lockup span {
+  flex: 0 0 auto;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  padding-left: 1rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
 }
 
 .hero-doodle {
@@ -101,7 +125,7 @@ button {
   right: 22%;
   width: 210px;
   height: 210px;
-  border: 34px solid rgba(104, 170, 151, 0.09);
+  border: 34px solid rgba(255, 255, 255, 0.07);
   border-radius: 45% 55% 60% 40%;
   transform: rotate(18deg);
 }
@@ -112,7 +136,7 @@ button {
   width: 170px;
   height: 150px;
   border-radius: 38% 62% 44% 56%;
-  background: rgba(244, 174, 119, 0.09);
+  background: rgba(247, 177, 87, 0.13);
   transform: rotate(-12deg);
 }
 
@@ -127,9 +151,10 @@ button {
   align-items: center;
   gap: 0.4rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.09);
   padding: 0.48rem 0.72rem;
-  color: #57706a;
+  color: #e1eeeb;
   font-size: 0.75rem;
   font-weight: 600;
   box-shadow: 0 4px 14px rgba(61, 83, 72, 0.05);
@@ -137,7 +162,7 @@ button {
 
 .hero-meta svg {
   width: 0.9rem;
-  color: #4d8d7f;
+  color: #f3bd72;
 }
 
 .plan-summary {
@@ -147,7 +172,7 @@ button {
   justify-content: space-between;
   border: 1px solid rgba(255, 255, 255, 0.92);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.94);
   padding: 1.3rem;
   box-shadow: 0 16px 38px rgba(76, 101, 91, 0.1);
   backdrop-filter: blur(12px);
@@ -1229,6 +1254,22 @@ button {
 @media (max-width: 640px) {
   .hero-panel {
     border-radius: 22px;
+  }
+
+  .brand-lockup {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .brand-lockup img {
+    width: min(360px, 100%);
+  }
+
+  .brand-lockup span {
+    border-left: 0;
+    padding-left: 0;
+    font-size: 0.65rem;
   }
 
   .plan-summary {

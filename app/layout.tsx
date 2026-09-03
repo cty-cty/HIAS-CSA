@@ -5,25 +5,25 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     'https://ucas-fall-course-assistant.qwepoi147258369.chatgpt.site',
   ),
-  title: '2026 秋季学期选课助手',
-  description: '结合课程 Excel 与物光学院培养方案制作的课程筛选、要求核对、课表模拟与冲突检测工具。',
+  title: '国科大杭州高等研究院 · 2026 秋季预选课助手',
+  description: '面向国科大杭州高等研究院研究生的秋季预选课辅助工具，支持课程筛选、培养方案核对、课表模拟、考试压力分析与冲突检测。',
   openGraph: {
-    title: '2026 秋季学期选课助手',
-    description: '筛选课程、核对培养要求、按周查看课表，并自动识别时间冲突。',
+    title: '国科大杭州高等研究院预选课助手',
+    description: '2026 秋季课程筛选、培养方案核对、按周排课与冲突检测。',
     type: 'website',
     images: [
       {
         url: '/og.png',
         width: 1200,
         height: 630,
-        alt: '2026 秋季学期选课助手',
+        alt: '国科大杭州高等研究院 2026 秋季预选课助手',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: '2026 秋季学期选课助手',
-    description: '筛选课程、核对培养要求、按周查看课表，并自动识别时间冲突。',
+    title: '国科大杭州高等研究院预选课助手',
+    description: '2026 秋季课程筛选、培养方案核对、按周排课与冲突检测。',
     images: ['/og.png'],
   },
 };

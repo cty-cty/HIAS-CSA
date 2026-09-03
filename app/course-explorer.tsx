@@ -647,16 +647,25 @@ export default function CourseExplorer({
           <div className="hero-doodle hero-doodle-one" />
           <div className="hero-doodle hero-doodle-two" />
           <div className="relative z-10 grid gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
-            <div>
-              <p className="mb-4 inline-flex rounded-full border border-[#b9d9cf] bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-[#39766c]">
-                2026 FALL · UCAS
-              </p>
-              <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-[-0.03em] text-[#1f3732] sm:text-[2.65rem]">
-                把 {initialCourses.length} 门课，排成属于你的这一周
-              </h1>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#60736e] sm:text-base">
-                从培养要求、考试方式到每周时段，把选课信息摊开来看。收藏备选课程，系统会帮你检查时间冲突。
-              </p>
+	            <div>
+	              <div className="brand-lockup">
+	                <img
+	                  alt="国科大杭州高等研究院 Hangzhou Institute for Advanced Study, UCAS"
+	                  height="62"
+	                  src="/hias-logo-white.png"
+	                  width="450"
+	                />
+	                <span>研究生预选课辅助工具</span>
+	              </div>
+	              <p className="mb-4 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-[#dceee8]">
+	                2026 FALL · HANGZHOU
+	              </p>
+	              <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-[-0.03em] text-white sm:text-[2.65rem]">
+	                杭高院 2026 秋季预选课助手
+	              </h1>
+	              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#d8e6e2] sm:text-base">
+	                面向国科大杭州高等研究院研究生，集中查看课程、培养要求与考试方式，把 {initialCourses.length} 门课排成真正适合你的这一周。
+	              </p>
               <div className="hero-meta mt-7">
                 <span><FileSpreadsheet /> 秋季课表数据</span>
                 <span><BookOpen /> {initialCourses.length} 门课程</span>
@@ -667,7 +676,7 @@ export default function CourseExplorer({
             </div>
             <aside className="plan-summary">
               <div>
-                <p>MY COURSE PLAN</p>
+	                <p>MY PRESELECTION</p>
                 <div className="credit-spotlight mt-3">
                   <div className="flex items-end gap-2">
                     <strong>{formatCredits(selectedCredits)}</strong>
@@ -1356,7 +1365,7 @@ export default function CourseExplorer({
         )}
 
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>数据来源：秋季学期课表 Excel 与物光学院课程设置 PPT</span>
+	          <span>国科大杭州高等研究院 · 2026 秋季预选课辅助工具</span>
           <span>本工具仅用于选课规划，最终安排以学校通知为准。</span>
         </footer>
       </div>
