@@ -1,0 +1,19 @@
+{
+  "name": "国科大杭州高等研究院 2026 秋季预选课助手",
+  "short_name": "杭高院选课",
+  "description": "支持课程筛选、培养方案核对、课表模拟、考试压力分析与冲突检测。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f6",
+  "theme_color": "#123f6b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
