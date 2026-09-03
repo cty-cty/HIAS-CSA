@@ -1036,9 +1036,12 @@ export default function CourseExplorer({
                   disabled={!selectedCourses.length}
                   variant="outline"
                 >
-                  <Download /> 导出 CSV
+                  <Download /> 导出 WakeUp CSV
                 </Button>
               </div>
+              <p className="mt-2 text-[0.72rem] leading-5 text-slate-500">
+                导出格式符合 WakeUp 课程表模板；确认课程安排无误后再导入。
+              </p>
             </aside>
           </div>
         </section>
