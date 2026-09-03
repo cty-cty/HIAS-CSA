@@ -119,10 +119,16 @@ button {
   margin-bottom: 1rem;
 }
 
-.brand-lockup img {
+.brand-mark {
   display: block;
-  width: min(405px, 100%);
-  height: auto;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 13px;
+  padding: 0.58rem 0.8rem;
+  color: #ffffff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
 }
 
 .brand-lockup span {
@@ -1365,8 +1371,8 @@ button {
     gap: 0.6rem;
   }
 
-  .brand-lockup img {
-    width: min(340px, 100%);
+  .brand-mark {
+    font-size: 1.1rem;
   }
 
   .brand-lockup span {

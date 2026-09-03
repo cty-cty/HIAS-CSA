@@ -26,7 +26,7 @@ const documentShell = html.slice(0, html.indexOf('<script>'));
 if (/<script\b[^>]*\bsrc=/i.test(documentShell))
   failures.push('仍包含外部脚本');
 if (/<link\b[^>]*\bhref=/i.test(documentShell)) failures.push('仍包含外部样式');
-if (!html.includes('data:image/png;base64,')) failures.push('Logo 未内嵌');
+if (html.includes('hias-logo-white.png')) failures.push('仍包含官方 Logo 资源');
 if (html.includes('process.env.NODE_ENV'))
   failures.push('仍包含浏览器无法识别的环境变量');
 
@@ -48,5 +48,5 @@ if (failures.length) {
 }
 
 console.log(
-  `离线版校验通过：${courses.length} 门课程，${(fileInfo.size / 1024 / 1024).toFixed(2)} MB，无外部脚本、样式或个人网址。`,
+  `离线版校验通过：${courses.length} 门课程，${(fileInfo.size / 1024 / 1024).toFixed(2)} MB，无外部脚本、样式、官方 Logo 或个人网址。`,
 );

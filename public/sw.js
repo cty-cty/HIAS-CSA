@@ -1,11 +1,6 @@
 const CACHE_PREFIX = 'hias-course-planner-';
 const CACHE_NAME = `${CACHE_PREFIX}v10`;
-const CORE_ASSETS = [
-  '/',
-  '/manifest.webmanifest',
-  '/favicon.svg',
-  '/hias-logo-white.png',
-];
+const CORE_ASSETS = ['/', '/manifest.webmanifest', '/favicon.svg'];
 
 async function cacheAppShell() {
   const cache = await caches.open(CACHE_NAME);

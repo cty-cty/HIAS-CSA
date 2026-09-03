@@ -12,16 +12,12 @@ const outputPath = path.resolve(
   '杭高院2026秋季预选课助手-离线版.html',
 );
 
-const [css, bundledJavaScript, logo] = await Promise.all([
+const [css, bundledJavaScript] = await Promise.all([
   readFile(path.join(projectDir, '.offline-build', 'app.css'), 'utf8'),
   readFile(path.join(projectDir, '.offline-build', 'app.js'), 'utf8'),
-  readFile(path.join(projectDir, 'public', 'hias-logo-white.png')),
 ]);
 
-const logoDataUrl = `data:image/png;base64,${logo.toString('base64')}`;
-const javaScript = bundledJavaScript
-  .replaceAll('/hias-logo-white.png', logoDataUrl)
-  .replaceAll('</script', '<\\/script');
+const javaScript = bundledJavaScript.replaceAll('</script', '<\\/script');
 
 const html = `<!doctype html>
 <html lang="zh-CN">

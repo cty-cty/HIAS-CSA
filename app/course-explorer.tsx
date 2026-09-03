@@ -962,12 +962,9 @@ export default function CourseExplorer({
           <div className="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
             <div>
               <div className="brand-lockup">
-                <img
-                  alt="国科大杭州高等研究院 Hangzhou Institute for Advanced Study, UCAS"
-                  height="62"
-                  src="/hias-logo-white.png"
-                  width="450"
-                />
+                <div aria-hidden="true" className="brand-mark">
+                  HIAS-CSA
+                </div>
                 <span>研究生预选课辅助工具</span>
               </div>
               <p className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#dceee8]">
