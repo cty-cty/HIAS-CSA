@@ -114,11 +114,36 @@ type WebMcpContext = {
 const DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 const PAGE_SIZE = 24;
 const EXAM_BUCKETS: ExamBucket[] = [
-  { id: 'closed', label: '闭卷考试', description: '需要集中复习与笔试准备', tone: 'rose' },
-  { id: 'open', label: '开卷考试', description: '重在资料整理与理解应用', tone: 'blue' },
-  { id: 'report', label: '报告 / 论文', description: '需要持续阅读、写作或汇报', tone: 'amber' },
-  { id: 'practical', label: '实践 / 技能', description: '以操作、设计或技能考核为主', tone: 'emerald' },
-  { id: 'other', label: '其他考核', description: '以课程文件中的具体说明为准', tone: 'slate' },
+  {
+    id: 'closed',
+    label: '闭卷考试',
+    description: '需要集中复习与笔试准备',
+    tone: 'rose',
+  },
+  {
+    id: 'open',
+    label: '开卷考试',
+    description: '重在资料整理与理解应用',
+    tone: 'blue',
+  },
+  {
+    id: 'report',
+    label: '报告 / 论文',
+    description: '需要持续阅读、写作或汇报',
+    tone: 'amber',
+  },
+  {
+    id: 'practical',
+    label: '实践 / 技能',
+    description: '以操作、设计或技能考核为主',
+    tone: 'emerald',
+  },
+  {
+    id: 'other',
+    label: '其他考核',
+    description: '以课程文件中的具体说明为准',
+    tone: 'slate',
+  },
 ];
 const COURSE_COLORS = [
   ['#dff2ee', '#147d6f'],
@@ -212,7 +237,9 @@ function formatWeekRanges(weeks: number[]) {
 
 function formatConflictSlot(slot: ConflictSlot) {
   const periods =
-    slot.start === slot.end ? `第${slot.start}节` : `第${slot.start}-${slot.end}节`;
+    slot.start === slot.end
+      ? `第${slot.start}节`
+      : `第${slot.start}-${slot.end}节`;
   return `${slot.day} ${periods} · ${formatWeekRanges(slot.weeks)}`;
 }
 
@@ -228,8 +255,13 @@ function ScheduleLines({ schedules }: { schedules: Schedule[] }) {
   return (
     <div className="space-y-1.5">
       {schedules.map((schedule, index) => (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1" key={`${schedule.periodText}-${index}`}>
-          <span className="font-medium text-slate-800">{schedule.periodText}</span>
+        <div
+          className="flex flex-wrap items-center gap-x-2 gap-y-1"
+          key={`${schedule.periodText}-${index}`}
+        >
+          <span className="font-medium text-slate-800">
+            {schedule.periodText}
+          </span>
           <span className="text-slate-500">{schedule.weeksText}</span>
           <span className="inline-flex items-center gap-1 text-slate-500">
             <MapPin className="size-3.5" /> {schedule.room}
@@ -254,7 +286,9 @@ export default function CourseExplorer({
   const [storageReady, setStorageReady] = useState(false);
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
-  const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>('courses');
+  const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>(
+    'courses',
+  );
   const [programPlanId, setProgramPlanId] = useState('optical-master');
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
@@ -327,7 +361,9 @@ export default function CourseExplorer({
             ) {
               throw new Error('courseCodes 必须是课程编码字符串数组。');
             }
-            const unknownCodes = codes.filter((code) => !courseByCode.has(code));
+            const unknownCodes = codes.filter(
+              (code) => !courseByCode.has(code),
+            );
             if (unknownCodes.length) {
               throw new Error(`未找到课程编码：${unknownCodes.join('、')}`);
             }
@@ -403,14 +439,20 @@ export default function CourseExplorer({
   const selectedCreditBreakdown = useMemo(() => {
     const totals = new Map<string, number>();
     selectedCourses.forEach((course) => {
-      totals.set(course.category, (totals.get(course.category) ?? 0) + course.credits);
+      totals.set(
+        course.category,
+        (totals.get(course.category) ?? 0) + course.credits,
+      );
     });
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
   }, [selectedCourses]);
   const activePlan =
     PROGRAM_PLANS.find((plan) => plan.id === programPlanId) ?? PROGRAM_PLANS[0];
   const planCoreCourses = useMemo(
-    () => initialCourses.filter((course) => activePlan.coreCourses.includes(course.name)),
+    () =>
+      initialCourses.filter((course) =>
+        activePlan.coreCourses.includes(course.name),
+      ),
     [activePlan, initialCourses],
   );
   const planProfessionalCourses = useMemo(
@@ -443,7 +485,8 @@ export default function CourseExplorer({
       })),
     [selectedCourses],
   );
-  const closedExamCount = examGroups.find((group) => group.id === 'closed')?.courses.length ?? 0;
+  const closedExamCount =
+    examGroups.find((group) => group.id === 'closed')?.courses.length ?? 0;
   const examPressureMessage = !selectedCourses.length
     ? '选择课程后，这里会分析考核方式结构。'
     : closedExamCount >= 3
@@ -457,7 +500,11 @@ export default function CourseExplorer({
     kind: 'core' | 'professional';
   }> = [
     { title: '本学期方案核心课', courses: planCoreCourses, kind: 'core' },
-    { title: '本学期方案专业课', courses: planProfessionalCourses, kind: 'professional' },
+    {
+      title: '本学期方案专业课',
+      courses: planProfessionalCourses,
+      kind: 'professional',
+    },
   ];
 
   const conflictingIds = useMemo(() => {
@@ -536,7 +583,8 @@ export default function CourseExplorer({
       const matchesConflict =
         !onlyNoConflict ||
         selectedCourses.every(
-          (selected) => selected.id === course.id || !coursesConflict(course, selected),
+          (selected) =>
+            selected.id === course.id || !coursesConflict(course, selected),
         );
       return (
         matchesQuery &&
@@ -579,7 +627,10 @@ export default function CourseExplorer({
   function getConflictAlternatives(source: Course) {
     const baseName = courseBaseName(source.name);
     return initialCourses.filter((candidate) => {
-      if (candidate.id === source.id || courseBaseName(candidate.name) !== baseName) {
+      if (
+        candidate.id === source.id ||
+        courseBaseName(candidate.name) !== baseName
+      ) {
         return false;
       }
       return selectedCourses.every(
@@ -642,41 +693,52 @@ export default function CourseExplorer({
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-slate-900">
-      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8">
-        <section className="hero-panel relative overflow-hidden rounded-[30px] border border-[#dce5de] px-6 py-7 shadow-[0_22px_65px_rgba(61,83,72,.10)] sm:px-9 sm:py-9">
+      <div className="mx-auto max-w-[1380px] px-3 py-4 sm:px-5 lg:px-7">
+        <section className="hero-panel relative overflow-hidden rounded-[26px] border border-[#dce5de] px-5 py-6 shadow-[0_22px_65px_rgba(61,83,72,.10)] sm:px-8 sm:py-7">
           <div className="hero-doodle hero-doodle-one" />
           <div className="hero-doodle hero-doodle-two" />
-          <div className="relative z-10 grid gap-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-stretch">
-	            <div>
-	              <div className="brand-lockup">
-	                <img
-	                  alt="国科大杭州高等研究院 Hangzhou Institute for Advanced Study, UCAS"
-	                  height="62"
-	                  src="/hias-logo-white.png"
-	                  width="450"
-	                />
-	                <span>研究生预选课辅助工具</span>
-	              </div>
-	              <p className="mb-4 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-[#dceee8]">
-	                2026 FALL · HANGZHOU
-	              </p>
-	              <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-[-0.03em] text-white sm:text-[2.65rem]">
-	                杭高院 2026 秋季预选课助手
-	              </h1>
-	              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#d8e6e2] sm:text-base">
-	                面向国科大杭州高等研究院研究生，集中查看课程、培养要求与考试方式，把 {initialCourses.length} 门课排成真正适合你的这一周。
-	              </p>
-              <div className="hero-meta mt-7">
-                <span><FileSpreadsheet /> 秋季课表数据</span>
-                <span><BookOpen /> {initialCourses.length} 门课程</span>
-                <span><GraduationCap /> {subjects.length} 个学科/专业</span>
-                <span><ClipboardList /> {PROGRAM_PLANS.length} 个培养方向</span>
-                <span><Sparkles /> 自动冲突检查</span>
+          <div className="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
+            <div>
+              <div className="brand-lockup">
+                <img
+                  alt="国科大杭州高等研究院 Hangzhou Institute for Advanced Study, UCAS"
+                  height="62"
+                  src="/hias-logo-white.png"
+                  width="450"
+                />
+                <span>研究生预选课辅助工具</span>
+              </div>
+              <p className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#dceee8]">
+                2026 FALL · HANGZHOU
+              </p>
+              <h1 className="max-w-3xl text-[2rem] font-bold leading-[1.18] tracking-[-0.035em] text-white sm:text-[2.45rem]">
+                杭高院 2026 秋季预选课助手
+              </h1>
+              <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
+                面向国科大杭州高等研究院研究生，集中查看课程、培养要求与考试方式，把{' '}
+                {initialCourses.length} 门课排成真正适合你的这一周。
+              </p>
+              <div className="hero-meta mt-5">
+                <span>
+                  <FileSpreadsheet /> 秋季课表数据
+                </span>
+                <span>
+                  <BookOpen /> {initialCourses.length} 门课程
+                </span>
+                <span>
+                  <GraduationCap /> {subjects.length} 个学科/专业
+                </span>
+                <span>
+                  <ClipboardList /> {PROGRAM_PLANS.length} 个培养方向
+                </span>
+                <span>
+                  <Sparkles /> 自动冲突检查
+                </span>
               </div>
             </div>
             <aside className="plan-summary">
               <div>
-	                <p>MY PRESELECTION</p>
+                <p>MY PRESELECTION</p>
                 <div className="credit-spotlight mt-3">
                   <div className="flex items-end gap-2">
                     <strong>{formatCredits(selectedCredits)}</strong>
@@ -688,12 +750,18 @@ export default function CourseExplorer({
                 </div>
                 {selectedCreditBreakdown.length > 0 ? (
                   <div className="credit-breakdown mt-4">
-                    {selectedCreditBreakdown.slice(0, 3).map(([label, credits]) => (
-                      <span key={label}>{label} {formatCredits(credits)}</span>
-                    ))}
+                    {selectedCreditBreakdown
+                      .slice(0, 3)
+                      .map(([label, credits]) => (
+                        <span key={label}>
+                          {label} {formatCredits(credits)}
+                        </span>
+                      ))}
                   </div>
                 ) : (
-                  <div className="credit-empty mt-4">选择课程后，这里会汇总学分</div>
+                  <div className="credit-empty mt-4">
+                    选择课程后，这里会汇总学分
+                  </div>
                 )}
               </div>
               <div className="mt-6 grid grid-cols-2 gap-2.5">
@@ -716,8 +784,8 @@ export default function CourseExplorer({
           </div>
         </section>
 
-        <section className="relative z-20 mt-4 rounded-[24px] border border-[#e1e5df] bg-white/94 p-4 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-5">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,1.35fr)_repeat(4,minmax(150px,.62fr))_auto]">
+        <section className="relative z-20 mt-3.5 rounded-[22px] border border-[#e1e5df] bg-white/94 p-3.5 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-4">
+          <div className="grid gap-2.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(260px,1.35fr)_repeat(4,minmax(138px,.62fr))_auto]">
             <label className="relative block" htmlFor="course-search">
               <span className="sr-only">搜索课程</span>
               <Search className="absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
@@ -735,12 +803,12 @@ export default function CourseExplorer({
               onChange={(event) => setCollege(event.target.value)}
               value={college}
             >
-                <NativeSelectOption value="全部院系">全部院系</NativeSelectOption>
-                {colleges.map((item) => (
-                  <NativeSelectOption key={item} value={item}>
-                    {item}
-                  </NativeSelectOption>
-                ))}
+              <NativeSelectOption value="全部院系">全部院系</NativeSelectOption>
+              {colleges.map((item) => (
+                <NativeSelectOption key={item} value={item}>
+                  {item}
+                </NativeSelectOption>
+              ))}
             </NativeSelect>
             <NativeSelect
               aria-label="按所属学科或专业筛选"
@@ -748,12 +816,14 @@ export default function CourseExplorer({
               onChange={(event) => setSubject(event.target.value)}
               value={subject}
             >
-                <NativeSelectOption value="全部学科/专业">全部学科/专业</NativeSelectOption>
-                {subjects.map((item) => (
-                  <NativeSelectOption key={item} value={item}>
-                    {item}
-                  </NativeSelectOption>
-                ))}
+              <NativeSelectOption value="全部学科/专业">
+                全部学科/专业
+              </NativeSelectOption>
+              {subjects.map((item) => (
+                <NativeSelectOption key={item} value={item}>
+                  {item}
+                </NativeSelectOption>
+              ))}
             </NativeSelect>
             <NativeSelect
               aria-label="按课程类别筛选"
@@ -761,12 +831,14 @@ export default function CourseExplorer({
               onChange={(event) => setCategory(event.target.value)}
               value={category}
             >
-                <NativeSelectOption value="全部类别">全部课程类别</NativeSelectOption>
-                {categories.map((item) => (
-                  <NativeSelectOption key={item} value={item}>
-                    {item}
-                  </NativeSelectOption>
-                ))}
+              <NativeSelectOption value="全部类别">
+                全部课程类别
+              </NativeSelectOption>
+              {categories.map((item) => (
+                <NativeSelectOption key={item} value={item}>
+                  {item}
+                </NativeSelectOption>
+              ))}
             </NativeSelect>
             <NativeSelect
               aria-label="按星期筛选"
@@ -774,12 +846,12 @@ export default function CourseExplorer({
               onChange={(event) => setDay(event.target.value)}
               value={day}
             >
-                <NativeSelectOption value="全部星期">全部星期</NativeSelectOption>
-                {DAYS.map((item) => (
-                  <NativeSelectOption key={item} value={item}>
-                    {item}
-                  </NativeSelectOption>
-                ))}
+              <NativeSelectOption value="全部星期">全部星期</NativeSelectOption>
+              {DAYS.map((item) => (
+                <NativeSelectOption key={item} value={item}>
+                  {item}
+                </NativeSelectOption>
+              ))}
             </NativeSelect>
             <Button
               className="h-11 rounded-xl border-slate-200 px-4 text-slate-600"
@@ -793,26 +865,37 @@ export default function CourseExplorer({
           <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                className={onlySelected ? 'filter-chip filter-chip-active' : 'filter-chip'}
+                className={
+                  onlySelected
+                    ? 'filter-chip filter-chip-active'
+                    : 'filter-chip'
+                }
                 onClick={() => setOnlySelected((value) => !value)}
                 variant="outline"
               >
                 <Star className={onlySelected ? 'fill-current' : ''} /> 仅看已选
               </Button>
               <Button
-                className={onlyNoConflict ? 'filter-chip filter-chip-active' : 'filter-chip'}
+                className={
+                  onlyNoConflict
+                    ? 'filter-chip filter-chip-active'
+                    : 'filter-chip'
+                }
                 onClick={() => setOnlyNoConflict((value) => !value)}
                 variant="outline"
               >
                 <Zap /> 不与已选冲突
               </Button>
               {conflictingIds.size > 0 && (
-                <Badge className="h-8 rounded-lg bg-rose-50 px-3 text-rose-700" variant="secondary">
+                <Badge
+                  className="h-8 rounded-lg bg-rose-50 px-3 text-rose-700"
+                  variant="secondary"
+                >
                   {conflictPairs.length} 组课程冲突
                 </Badge>
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex w-full flex-wrap items-center gap-2.5 md:w-auto md:justify-end">
               <div className="selection-credit-pill" aria-live="polite">
                 <Sparkles />
                 <span>已选总计</span>
@@ -820,7 +903,7 @@ export default function CourseExplorer({
                 <b>学分</b>
                 <small>{selectedCourses.length} 门课</small>
               </div>
-              <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1 sm:flex">
+              <div className="grid w-full grid-cols-2 rounded-xl bg-slate-100 p-1 sm:w-auto sm:flex">
                 <button
                   className={`view-tab ${view === 'courses' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('courses')}
@@ -865,50 +948,74 @@ export default function CourseExplorer({
               <div className="conflict-list">
                 {conflictPairs.map(({ left, right, slots }) => {
                   const alternatives = [left, right]
-                    .map((source) => ({ source, courses: getConflictAlternatives(source) }))
+                    .map((source) => ({
+                      source,
+                      courses: getConflictAlternatives(source),
+                    }))
                     .filter((group) => group.courses.length > 0);
                   return (
-                  <div className="conflict-row" key={`${left.id}-${right.id}`}>
-                    <div className="conflict-courses">
-                      <button onClick={() => setDetailCourse(left)} type="button">{left.name}</button>
-                      <span>与</span>
-                      <button onClick={() => setDetailCourse(right)} type="button">{right.name}</button>
-                      <strong>冲突</strong>
-                    </div>
-                    <div className="conflict-slots">
-                      {slots.map((slot, index) => (
-                        <span key={`${formatConflictSlot(slot)}-${index}`}>
-                          <Clock3 /> {formatConflictSlot(slot)}
-                        </span>
-                      ))}
-                    </div>
-                    {alternatives.length > 0 ? (
-                      <div className="conflict-alternatives">
-                        <div className="conflict-alternatives-title">
-                          <Repeat2 /> 无冲突替代班次
-                        </div>
-                        {alternatives.map(({ source, courses }) => (
-                          <div className="alternative-group" key={source.id}>
-                            <span>替换 {source.name}</span>
-                            <div>
-                              {courses.slice(0, 4).map((candidate) => (
-                                <button
-                                  key={candidate.id}
-                                  onClick={() => replaceCourse(source.id, candidate.id)}
-                                  type="button"
-                                >
-                                  换成 {candidate.name}
-                                  <small>{candidate.schedules.map((item) => item.periodText).join('、')}</small>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                    <div
+                      className="conflict-row"
+                      key={`${left.id}-${right.id}`}
+                    >
+                      <div className="conflict-courses">
+                        <button
+                          onClick={() => setDetailCourse(left)}
+                          type="button"
+                        >
+                          {left.name}
+                        </button>
+                        <span>与</span>
+                        <button
+                          onClick={() => setDetailCourse(right)}
+                          type="button"
+                        >
+                          {right.name}
+                        </button>
+                        <strong>冲突</strong>
+                      </div>
+                      <div className="conflict-slots">
+                        {slots.map((slot, index) => (
+                          <span key={`${formatConflictSlot(slot)}-${index}`}>
+                            <Clock3 /> {formatConflictSlot(slot)}
+                          </span>
                         ))}
                       </div>
-                    ) : (
-                      <div className="conflict-no-alternative">暂无可直接替换的同课无冲突班次</div>
-                    )}
-                  </div>
+                      {alternatives.length > 0 ? (
+                        <div className="conflict-alternatives">
+                          <div className="conflict-alternatives-title">
+                            <Repeat2 /> 无冲突替代班次
+                          </div>
+                          {alternatives.map(({ source, courses }) => (
+                            <div className="alternative-group" key={source.id}>
+                              <span>替换 {source.name}</span>
+                              <div>
+                                {courses.slice(0, 4).map((candidate) => (
+                                  <button
+                                    key={candidate.id}
+                                    onClick={() =>
+                                      replaceCourse(source.id, candidate.id)
+                                    }
+                                    type="button"
+                                  >
+                                    换成 {candidate.name}
+                                    <small>
+                                      {candidate.schedules
+                                        .map((item) => item.periodText)
+                                        .join('、')}
+                                    </small>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="conflict-no-alternative">
+                          暂无可直接替换的同课无冲突班次
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -917,16 +1024,15 @@ export default function CourseExplorer({
         </section>
 
         {view === 'courses' ? (
-          <section className="py-7">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <section className="py-6">
+            <div className="section-heading mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-sm text-slate-500">COURSE RESULTS</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">
-                  找到 {filteredCourses.length} 门课程
-                </h2>
+                <p>COURSE RESULTS</p>
+                <h2>找到 {filteredCourses.length} 门课程</h2>
               </div>
               <p className="text-sm text-slate-500">
-                已显示 {Math.min(visibleCount, filteredCourses.length)} / {filteredCourses.length}
+                已显示 {Math.min(visibleCount, filteredCourses.length)} /{' '}
+                {filteredCourses.length}
               </p>
             </div>
 
@@ -944,36 +1050,56 @@ export default function CourseExplorer({
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="mb-2 flex flex-wrap gap-1.5">
-                            <Badge className="bg-blue-50 text-blue-700" variant="secondary">
+                            <Badge
+                              className="bg-blue-50 text-blue-700"
+                              variant="secondary"
+                            >
                               {course.category}
                             </Badge>
-                            <Badge className="bg-emerald-50 text-emerald-700" variant="secondary">
+                            <Badge
+                              className="bg-emerald-50 text-emerald-700"
+                              variant="secondary"
+                            >
                               {course.level}
                             </Badge>
                             {activePlan.coreCourses.includes(course.name) && (
-                              <Badge className="bg-violet-50 text-violet-700" variant="secondary">
+                              <Badge
+                                className="bg-violet-50 text-violet-700"
+                                variant="secondary"
+                              >
                                 方案核心课
                               </Badge>
                             )}
-                            {activePlan.professionalCourses.includes(course.name) && (
-                              <Badge className="bg-amber-50 text-amber-700" variant="secondary">
+                            {activePlan.professionalCourses.includes(
+                              course.name,
+                            ) && (
+                              <Badge
+                                className="bg-amber-50 text-amber-700"
+                                variant="secondary"
+                              >
                                 方案专业课
                               </Badge>
                             )}
-                            <Badge className="bg-slate-100 text-slate-600" variant="secondary">
+                            <Badge
+                              className="bg-slate-100 text-slate-600"
+                              variant="secondary"
+                            >
                               {formatCredits(course.credits)} 学分
                             </Badge>
                             <Badge className="source-badge" variant="secondary">
                               <FileSpreadsheet /> 秋季课表
                             </Badge>
                             {conflict && (
-                              <Badge className="bg-rose-50 text-rose-700" variant="secondary">
+                              <Badge
+                                className="bg-rose-50 text-rose-700"
+                                variant="secondary"
+                              >
                                 时间冲突
                               </Badge>
                             )}
                           </div>
                           <button
-                            className="text-left text-lg font-bold leading-snug tracking-tight text-slate-900 hover:text-blue-700"
+                            className="course-title text-left font-bold tracking-tight text-slate-900 hover:text-blue-700"
                             onClick={() => setDetailCourse(course)}
                             type="button"
                           >
@@ -984,7 +1110,11 @@ export default function CourseExplorer({
                           </p>
                         </div>
                         <button
-                          aria-label={selected ? `移除${course.name}` : `选择${course.name}`}
+                          aria-label={
+                            selected
+                              ? `移除${course.name}`
+                              : `选择${course.name}`
+                          }
                           className={`star-button ${selected ? 'star-button-selected' : ''}`}
                           onClick={() => toggleCourse(course.id)}
                           type="button"
@@ -993,7 +1123,7 @@ export default function CourseExplorer({
                         </button>
                       </div>
 
-                      <div className="my-4 h-px bg-slate-100" />
+                      <div className="my-3.5 h-px bg-slate-100" />
                       <div className="grid grid-cols-2 gap-3 text-sm">
                         <div className="info-pair">
                           <Users />
@@ -1011,15 +1141,23 @@ export default function CourseExplorer({
                         </div>
                       </div>
                       <div className="course-extra mt-4">
-                        <span><ClipboardCheck /> {course.examMode || '考试方式待定'}</span>
-                        <span><Presentation /> {course.teachingMode || '授课方式待定'}</span>
-                        <span><Clock3 /> {course.hours || '学时待定'}</span>
+                        <span>
+                          <ClipboardCheck /> {course.examMode || '考试方式待定'}
+                        </span>
+                        <span>
+                          <Presentation />{' '}
+                          {course.teachingMode || '授课方式待定'}
+                        </span>
+                        <span>
+                          <Clock3 /> {course.hours || '学时待定'}
+                        </span>
                       </div>
                       {conflict && (
                         <div className="course-conflict-note">
                           <Zap />
                           <span>
-                            与 {peers.map((peer) => peer.name).join('、')} 的上课时间冲突
+                            与 {peers.map((peer) => peer.name).join('、')}{' '}
+                            的上课时间冲突
                           </span>
                         </div>
                       )}
@@ -1029,7 +1167,8 @@ export default function CourseExplorer({
                       <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
                         <span className="font-mono">{course.code}</span>
                         <span>
-                          余量 {Math.max(0, course.capacity - course.enrolled)} / {course.capacity || '—'}
+                          余量 {Math.max(0, course.capacity - course.enrolled)}{' '}
+                          / {course.capacity || '—'}
                         </span>
                       </div>
                     </article>
@@ -1041,7 +1180,9 @@ export default function CourseExplorer({
                 <SlidersHorizontal />
                 <h3>没有找到匹配课程</h3>
                 <p>试试缩短关键词，或清空部分筛选条件。</p>
-                <Button onClick={clearFilters} variant="outline">清空筛选</Button>
+                <Button onClick={clearFilters} variant="outline">
+                  清空筛选
+                </Button>
               </div>
             )}
 
@@ -1058,14 +1199,14 @@ export default function CourseExplorer({
             )}
           </section>
         ) : view === 'guide' ? (
-          <section className="py-7">
-            <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <section className="py-6">
+            <div className="section-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-sm text-slate-500">PROGRAM REQUIREMENTS</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">物光学院培养方案参考</h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p>PROGRAM REQUIREMENTS</p>
+                <h2>物光学院培养方案参考</h2>
+                <div className="section-description">
                   根据《物光学院2026—2027年课程设置》整理，仅显示当前秋季课表中可对应的课程。
-                </p>
+                </div>
               </div>
               <label className="min-w-64 text-sm font-medium text-slate-600">
                 培养方向
@@ -1094,19 +1235,29 @@ export default function CourseExplorer({
                 <strong>≥{activePlan.totalCredits}</strong>
                 <span>毕业总学分</span>
               </div>
-	              <div className="program-selected-total">
-	                <strong>{formatCredits(selectedPlanCredits)}</strong>
-	                <span>本学期已选方案课学分</span>
-	              </div>
+              <div className="program-selected-total">
+                <strong>{formatCredits(selectedPlanCredits)}</strong>
+                <span>本学期已选方案课学分</span>
+              </div>
             </div>
 
             <div className="requirement-grid mt-4">
               {[
                 ['公共必修课', `${activePlan.publicRequiredCredits} 学分`],
                 ['专业学位课', `≥${activePlan.degreeCourseCredits} 学分`],
-                ['专业非学位课', activePlan.professionalNonDegreeCredits === null ? '不限' : `${activePlan.professionalNonDegreeCredits} 学分`],
+                [
+                  '专业非学位课',
+                  activePlan.professionalNonDegreeCredits === null
+                    ? '不限'
+                    : `${activePlan.professionalNonDegreeCredits} 学分`,
+                ],
                 ['公共选修课', `${activePlan.publicElectiveCredits} 学分`],
-                ['创新创业课', activePlan.innovationCredits === null ? '未单列' : `${activePlan.innovationCredits} 学分`],
+                [
+                  '创新创业课',
+                  activePlan.innovationCredits === null
+                    ? '未单列'
+                    : `${activePlan.innovationCredits} 学分`,
+                ],
               ].map(([label, value]) => (
                 <div className="requirement-item" key={label}>
                   <span>{label}</span>
@@ -1116,33 +1267,53 @@ export default function CourseExplorer({
             </div>
 
             <div className="selection-rules mt-4">
-	              <div className="rule-card">
-	                <Target />
-	                <div>
-	                  <span>本学期核心课覆盖</span>
-	                  <strong>已选 {selectedPlanCoreCount} / 可选 {planCoreCourses.length} 门</strong>
-	                  <p>培养方案要求：至少 {activePlan.coreMinimum} 门作为学位课</p>
-	                </div>
-	                <b>{selectedPlanCoreCount}/{planCoreCourses.length}</b>
-	              </div>
-	              <div className="rule-card">
-	                <Target />
-	                <div>
-	                  <span>本学期专业课覆盖</span>
-	                  <strong>已选 {selectedPlanProfessionalCount} / 可选 {planProfessionalCourses.length} 门</strong>
-	                  <p>培养方案要求：至少 {activePlan.professionalMinimum} 门作为学位课</p>
-	                </div>
-	                <b>{selectedPlanProfessionalCount}/{planProfessionalCourses.length}</b>
-	              </div>
-	            </div>
+              <div className="rule-card">
+                <Target />
+                <div>
+                  <span>本学期核心课覆盖</span>
+                  <strong>
+                    已选 {selectedPlanCoreCount} / 可选 {planCoreCourses.length}{' '}
+                    门
+                  </strong>
+                  <p>
+                    培养方案要求：至少 {activePlan.coreMinimum} 门作为学位课
+                  </p>
+                </div>
+                <b>
+                  {selectedPlanCoreCount}/{planCoreCourses.length}
+                </b>
+              </div>
+              <div className="rule-card">
+                <Target />
+                <div>
+                  <span>本学期专业课覆盖</span>
+                  <strong>
+                    已选 {selectedPlanProfessionalCount} / 可选{' '}
+                    {planProfessionalCourses.length} 门
+                  </strong>
+                  <p>
+                    培养方案要求：至少 {activePlan.professionalMinimum}{' '}
+                    门作为学位课
+                  </p>
+                </div>
+                <b>
+                  {selectedPlanProfessionalCount}/
+                  {planProfessionalCourses.length}
+                </b>
+              </div>
+            </div>
 
-	            <div className="coverage-note mt-4">
-	              <Info />
-	              <span>这里统计的是本学期已选课程对培养方案课程库的覆盖情况，不代表课程已经被认定为学位课，也不等同于毕业完成度。</span>
-	            </div>
+            <div className="coverage-note mt-4">
+              <Info />
+              <span>
+                这里统计的是本学期已选课程对培养方案课程库的覆盖情况，不代表课程已经被认定为学位课，也不等同于毕业完成度。
+              </span>
+            </div>
 
             {activePlan.note && (
-              <div className="program-note mt-4"><Info /> {activePlan.note}</div>
+              <div className="program-note mt-4">
+                <Info /> {activePlan.note}
+              </div>
             )}
 
             <div className="mt-7 grid gap-5 xl:grid-cols-2">
@@ -1160,13 +1331,27 @@ export default function CourseExplorer({
                       const selected = selectedIds.includes(course.id);
                       return (
                         <div className="program-course-row" key={course.id}>
-                          <button onClick={() => setDetailCourse(course)} type="button">
+                          <button
+                            onClick={() => setDetailCourse(course)}
+                            type="button"
+                          >
                             <strong>{course.name}</strong>
-                            <span>{course.teacher} · {formatCredits(course.credits)} 学分 · {course.schedules[0]?.periodText}</span>
+                            <span>
+                              {course.teacher} · {formatCredits(course.credits)}{' '}
+                              学分 · {course.schedules[0]?.periodText}
+                            </span>
                           </button>
                           <Button
-                            aria-label={selected ? `移除${course.name}` : `选择${course.name}`}
-                            className={selected ? 'program-select program-select-active' : 'program-select'}
+                            aria-label={
+                              selected
+                                ? `移除${course.name}`
+                                : `选择${course.name}`
+                            }
+                            className={
+                              selected
+                                ? 'program-select program-select-active'
+                                : 'program-select'
+                            }
                             onClick={() => toggleCourse(course.id)}
                             size="sm"
                             variant="outline"
@@ -1178,11 +1363,20 @@ export default function CourseExplorer({
                       );
                     })}
                     {!courses.length && (
-                      <div className="program-course-empty">本学期课表中没有匹配到该类课程。</div>
+                      <div className="program-course-empty">
+                        本学期课表中没有匹配到该类课程。
+                      </div>
                     )}
                   </div>
                   <p className="program-course-footnote">
-                    培养方案共列 {(kind === 'core' ? activePlan.coreCourses : activePlan.professionalCourses).length} 门，未出现的课程可能安排在春季。
+                    培养方案共列{' '}
+                    {
+                      (kind === 'core'
+                        ? activePlan.coreCourses
+                        : activePlan.professionalCourses
+                      ).length
+                    }{' '}
+                    门，未出现的课程可能安排在春季。
                   </p>
                 </div>
               ))}
@@ -1191,23 +1385,27 @@ export default function CourseExplorer({
             <div className="source-compare-note mt-5">
               <Info />
               <span>
-                培养要求与课程库依据 PPT；本学期课程的学分、教师、时间和教室仍以秋季课表为准。
-                {activePlan.program === '物理电子学' && ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
+                培养要求与课程库依据
+                PPT；本学期课程的学分、教师、时间和教室仍以秋季课表为准。
+                {activePlan.program === '物理电子学' &&
+                  ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
               </span>
             </div>
           </section>
         ) : view === 'exams' ? (
-          <section className="py-7">
-            <div className="mb-5">
-              <p className="text-sm text-slate-500">ASSESSMENT LOAD</p>
-              <h2 className="mt-1 text-2xl font-bold tracking-tight">考试压力视图</h2>
-              <p className="mt-1 text-sm text-slate-500">
+          <section className="py-6">
+            <div className="section-heading mb-5">
+              <p>ASSESSMENT LOAD</p>
+              <h2>考试压力视图</h2>
+              <div className="section-description">
                 按秋季课表中的考试方式整理已选课程，帮助你平衡闭卷、报告与实践任务。
-              </p>
+              </div>
             </div>
 
             <div className="exam-summary">
-              <div className="exam-summary-icon"><BarChart3 /></div>
+              <div className="exam-summary-icon">
+                <BarChart3 />
+              </div>
               <div>
                 <span>当前考核结构提示</span>
                 <strong>{examPressureMessage}</strong>
@@ -1221,9 +1419,16 @@ export default function CourseExplorer({
             {selectedCourses.length ? (
               <div className="exam-grid mt-5">
                 {examGroups.map((group) => {
-                  const credits = group.courses.reduce((sum, course) => sum + course.credits, 0);
+                  const credits = group.courses.reduce(
+                    (sum, course) => sum + course.credits,
+                    0,
+                  );
                   return (
-                    <article className="exam-card" data-tone={group.tone} key={group.id}>
+                    <article
+                      className="exam-card"
+                      data-tone={group.tone}
+                      key={group.id}
+                    >
                       <div className="exam-card-head">
                         <div>
                           <span>{group.label}</span>
@@ -1234,12 +1439,20 @@ export default function CourseExplorer({
                       <p>{group.description}</p>
                       <div className="exam-course-list">
                         {group.courses.map((course) => (
-                          <button key={course.id} onClick={() => setDetailCourse(course)} type="button">
+                          <button
+                            key={course.id}
+                            onClick={() => setDetailCourse(course)}
+                            type="button"
+                          >
                             <span>{course.name}</span>
                             <small>{course.examMode || '考试方式待定'}</small>
                           </button>
                         ))}
-                        {!group.courses.length && <span className="exam-course-empty">暂无已选课程</span>}
+                        {!group.courses.length && (
+                          <span className="exam-course-empty">
+                            暂无已选课程
+                          </span>
+                        )}
                       </div>
                     </article>
                   );
@@ -1256,18 +1469,22 @@ export default function CourseExplorer({
 
             <div className="source-compare-note mt-5">
               <FileSpreadsheet />
-              <span>考试方式来自 2026 年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量。</span>
+              <span>
+                考试方式来自 2026
+                年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量。
+              </span>
             </div>
           </section>
         ) : (
-          <section className="py-7">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <section className="py-6">
+            <div className="section-heading mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-sm text-slate-500">WEEKLY TIMETABLE</p>
-                <h2 className="mt-1 text-2xl font-bold tracking-tight">我的模拟课程表</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  共 {selectedCourses.length} 门课程 · {formatCredits(selectedCredits)} 学分
-                </p>
+                <p>WEEKLY TIMETABLE</p>
+                <h2>我的模拟课程表</h2>
+                <div className="section-description">
+                  共 {selectedCourses.length} 门课程 ·{' '}
+                  {formatCredits(selectedCredits)} 学分
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
                 查看周次
@@ -1277,11 +1494,13 @@ export default function CourseExplorer({
                   onChange={(event) => setWeek(Number(event.target.value))}
                   value={week}
                 >
-                    {Array.from({ length: 20 }, (_, index) => index + 1).map((value) => (
+                  {Array.from({ length: 20 }, (_, index) => index + 1).map(
+                    (value) => (
                       <NativeSelectOption key={value} value={value}>
                         第 {value} 周
                       </NativeSelectOption>
-                    ))}
+                    ),
+                  )}
                 </NativeSelect>
               </label>
             </div>
@@ -1290,7 +1509,8 @@ export default function CourseExplorer({
               <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                 {currentWeekConflicts.size > 0 && (
                   <div className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                    <Zap className="size-4" /> 本周有 {currentWeekConflicts.size} 门课程时间重叠，已用红色标出。
+                    <Zap className="size-4" /> 本周有{' '}
+                    {currentWeekConflicts.size} 门课程时间重叠，已用红色标出。
                   </div>
                 )}
                 <div className="overflow-x-auto pb-2">
@@ -1305,30 +1525,40 @@ export default function CourseExplorer({
                         {label}
                       </div>
                     ))}
-                    {Array.from({ length: 13 }, (_, index) => index + 1).map((period) => (
-                      <div
-                        className="timetable-period"
-                        key={period}
-                        style={{ gridColumn: 1, gridRow: period + 1 }}
-                      >
-                        <strong>{period}</strong>
-                        <span>第 {period} 节</span>
-                      </div>
-                    ))}
-                    {DAYS.flatMap((_, dayIndex) =>
-                      Array.from({ length: 13 }, (_, index) => index + 1).map((period) => (
+                    {Array.from({ length: 13 }, (_, index) => index + 1).map(
+                      (period) => (
                         <div
-                          className="timetable-cell"
-                          key={`${dayIndex}-${period}`}
-                          style={{ gridColumn: dayIndex + 2, gridRow: period + 1 }}
-                        />
-                      )),
+                          className="timetable-period"
+                          key={period}
+                          style={{ gridColumn: 1, gridRow: period + 1 }}
+                        >
+                          <strong>{period}</strong>
+                          <span>第 {period} 节</span>
+                        </div>
+                      ),
+                    )}
+                    {DAYS.flatMap((_, dayIndex) =>
+                      Array.from({ length: 13 }, (_, index) => index + 1).map(
+                        (period) => (
+                          <div
+                            className="timetable-cell"
+                            key={`${dayIndex}-${period}`}
+                            style={{
+                              gridColumn: dayIndex + 2,
+                              gridRow: period + 1,
+                            }}
+                          />
+                        ),
+                      ),
                     )}
                     {selectedCourses.flatMap((course) =>
                       course.schedules
                         .filter((schedule) => schedule.weeks.includes(week))
                         .map((schedule, scheduleIndex) => {
-                          const color = COURSE_COLORS[Number(course.id) % COURSE_COLORS.length];
+                          const color =
+                            COURSE_COLORS[
+                              Number(course.id) % COURSE_COLORS.length
+                            ];
                           const conflict = currentWeekConflicts.has(course.id);
                           return (
                             <button
@@ -1338,7 +1568,9 @@ export default function CourseExplorer({
                               style={{
                                 gridColumn: schedule.dayIndex + 2,
                                 gridRow: `${schedule.start + 1} / ${schedule.end + 2}`,
-                                backgroundColor: conflict ? '#ffe4e6' : color[0],
+                                backgroundColor: conflict
+                                  ? '#ffe4e6'
+                                  : color[0],
                                 borderColor: conflict ? '#e11d48' : color[1],
                                 color: conflict ? '#9f1239' : color[1],
                               }}
@@ -1365,7 +1597,7 @@ export default function CourseExplorer({
         )}
 
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-	          <span>国科大杭州高等研究院 · 2026 秋季预选课辅助工具</span>
+          <span>国科大杭州高等研究院 · 2026 秋季预选课辅助工具</span>
           <span>本工具仅用于选课规划，最终安排以学校通知为准。</span>
         </footer>
       </div>
@@ -1380,31 +1612,42 @@ export default function CourseExplorer({
           {detailCourse && (
             <>
               <SheetHeader className="border-b border-slate-100 p-6 pr-14">
-	                <div className="mb-2 flex flex-wrap gap-2">
-                  <Badge className="bg-blue-50 text-blue-700" variant="secondary">
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <Badge
+                    className="bg-blue-50 text-blue-700"
+                    variant="secondary"
+                  >
                     {detailCourse.category}
                   </Badge>
-	                  <Badge variant="outline">{detailCourse.level}</Badge>
-	                  <Badge className="source-badge" variant="secondary">
-	                    <FileSpreadsheet /> 秋季课表数据
-	                  </Badge>
-	                </div>
+                  <Badge variant="outline">{detailCourse.level}</Badge>
+                  <Badge className="source-badge" variant="secondary">
+                    <FileSpreadsheet /> 秋季课表数据
+                  </Badge>
+                </div>
                 <SheetTitle className="text-2xl font-bold leading-tight">
                   {detailCourse.name}
                 </SheetTitle>
-                <SheetDescription>{detailCourse.englishName || detailCourse.code}</SheetDescription>
+                <SheetDescription>
+                  {detailCourse.englishName || detailCourse.code}
+                </SheetDescription>
               </SheetHeader>
               <div className="space-y-6 p-6">
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     ['课程编码', detailCourse.code],
-                    ['学分 / 学时', `${formatCredits(detailCourse.credits)} / ${detailCourse.hours}`],
+                    [
+                      '学分 / 学时',
+                      `${formatCredits(detailCourse.credits)} / ${detailCourse.hours}`,
+                    ],
                     ['任课教师', detailCourse.teacher],
                     ['所属学科', detailCourse.subject],
                     ['开课院系', detailCourse.college],
                     ['考试方式', detailCourse.examMode],
                     ['授课方式', detailCourse.teachingMode],
-                    ['选课人数', `${detailCourse.enrolled} / ${detailCourse.capacity || '—'}`],
+                    [
+                      '选课人数',
+                      `${detailCourse.enrolled} / ${detailCourse.capacity || '—'}`,
+                    ],
                   ].map(([label, value]) => (
                     <div className="detail-field" key={label}>
                       <span>{label}</span>
@@ -1418,7 +1661,10 @@ export default function CourseExplorer({
                   </h3>
                   <div className="space-y-2">
                     {detailCourse.schedules.map((schedule, index) => (
-                      <div className="schedule-detail" key={`${schedule.periodText}-${index}`}>
+                      <div
+                        className="schedule-detail"
+                        key={`${schedule.periodText}-${index}`}
+                      >
                         <div>
                           <strong>{schedule.periodText}</strong>
                           <span>{schedule.weeksText}</span>
@@ -1433,10 +1679,22 @@ export default function CourseExplorer({
                 <Button
                   className="h-11 w-full rounded-xl"
                   onClick={() => toggleCourse(detailCourse.id)}
-                  variant={selectedIds.includes(detailCourse.id) ? 'outline' : 'default'}
+                  variant={
+                    selectedIds.includes(detailCourse.id)
+                      ? 'outline'
+                      : 'default'
+                  }
                 >
-                  <Star className={selectedIds.includes(detailCourse.id) ? 'fill-current' : ''} />
-                  {selectedIds.includes(detailCourse.id) ? '从已选中移除' : '加入我的课表'}
+                  <Star
+                    className={
+                      selectedIds.includes(detailCourse.id)
+                        ? 'fill-current'
+                        : ''
+                    }
+                  />
+                  {selectedIds.includes(detailCourse.id)
+                    ? '从已选中移除'
+                    : '加入我的课表'}
                 </Button>
                 <div className="flex gap-2 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
                   <Info className="mt-0.5 size-4 shrink-0" />
