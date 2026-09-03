@@ -12,6 +12,7 @@ import {
   BookOpen,
   BarChart3,
   CalendarDays,
+  CheckCircle2,
   ClipboardList,
   ChevronDown,
   ClipboardCheck,
@@ -32,6 +33,7 @@ import {
   Target,
   Trash2,
   Users,
+  TriangleAlert,
   X,
   Zap,
 } from 'lucide-react';
@@ -95,9 +97,11 @@ const DEFAULT_TERM_LABEL = '2026 秋季';
 const COURSE_DATASETS_STORAGE_KEY = 'hias-course-datasets-v1';
 const ACTIVE_TERM_STORAGE_KEY = 'hias-active-term-v1';
 const SELECTED_BY_TERM_STORAGE_KEY = 'hias-selected-by-term-v1';
+const DESIGNATIONS_BY_TERM_STORAGE_KEY = 'hias-designations-by-term-v1';
 const PROGRAM_PLANS_STORAGE_KEY = 'hias-program-plans-v1';
 const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
 const EMPTY_SELECTED_IDS: string[] = [];
+const EMPTY_DESIGNATIONS: Record<string, CourseDesignation> = {};
 
 type ConflictSlot = {
   day: string;
@@ -124,6 +128,16 @@ type ExamBucket = {
 type NoticeSection = {
   title: string;
   items: Array<{ label: string; detail: string }>;
+};
+
+type CourseDesignation = 'degree' | 'non-degree' | 'unset';
+
+type CheckupItem = {
+  id: string;
+  title: string;
+  value: string;
+  detail: string;
+  status: 'pass' | 'attention' | 'info';
 };
 
 type WebMcpContext = {
@@ -259,6 +273,34 @@ const NOTICE_SECTIONS: NoticeSection[] = [
     ],
   },
 ];
+const NON_DEGREE_ONLY_CATEGORIES = new Set([
+  '研讨课',
+  '实验课',
+  '实践课',
+  '科学前沿讲座',
+]);
+const INNOVATION_COURSE_NAMES = new Set([
+  '创业管理',
+  '创业启程',
+  '生物医药数字科创的未来',
+  '创新型个性发展心理学',
+  '创新创业实践及案例研究',
+  '创业融资入门',
+  '科技成果转移转化探究与实践',
+  '科技创新及方法',
+  '品牌与营销管理',
+  '创新创业训练营',
+  '技术发展与产品创新管理',
+  '军工航天领域的商业模式和案例',
+  '人工智能产品技术创新及应用案例',
+  '创造性思维',
+  '思维创新与设计',
+  '技术创业',
+  '科创产业前沿与人才科技政策体系',
+  '前沿科技融合与创新发展',
+  '技术创新创业投资与资本运作',
+  '科技创业领导力',
+]);
 const COURSE_COLORS = [
   ['#dff2ee', '#147d6f'],
   ['#e9e5fb', '#6251a4'],
@@ -267,6 +309,25 @@ const COURSE_COLORS = [
   ['#f8edca', '#91701e'],
   ['#f3dfe9', '#9c4b72'],
 ];
+
+function isNonDegreeOnly(course: Course) {
+  return (
+    NON_DEGREE_ONLY_CATEGORIES.has(course.category) ||
+    /科学前沿讲座|HIAS讲堂|人文系列讲座/.test(course.name)
+  );
+}
+
+function countsTowardSemesterMinimum(course: Course) {
+  return !/科学前沿讲座|HIAS讲堂|人文系列讲座/.test(
+    `${course.category} ${course.name}`,
+  );
+}
+
+function designationLabel(value: CourseDesignation) {
+  if (value === 'degree') return '学位课';
+  if (value === 'non-degree') return '非学位课';
+  return '未确定';
+}
 
 function intersects<T>(left: T[], right: T[]) {
   const lookup = new Set(left);
@@ -680,6 +741,9 @@ export default function CourseExplorer({
   const [selectedByTerm, setSelectedByTerm] = useState<
     Record<string, string[]>
   >({});
+  const [designationsByTerm, setDesignationsByTerm] = useState<
+    Record<string, Record<string, CourseDesignation>>
+  >({});
   const [query, setQuery] = useState('');
   const [college, setCollege] = useState('全部院系');
   const [subject, setSubject] = useState('全部学科/专业');
@@ -691,7 +755,7 @@ export default function CourseExplorer({
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
   const [view, setView] = useState<
-    'courses' | 'guide' | 'notice' | 'exams' | 'timetable'
+    'courses' | 'checkup' | 'guide' | 'notice' | 'exams' | 'timetable'
   >('courses');
   const [customProgramPlans, setCustomProgramPlans] = useState<ProgramPlan[]>(
     [],
@@ -733,6 +797,8 @@ export default function CourseExplorer({
     [customDatasets, defaultCourses],
   );
   const selectedIds = selectedByTerm[activeTermId] ?? EMPTY_SELECTED_IDS;
+  const activeDesignations =
+    designationsByTerm[activeTermId] ?? EMPTY_DESIGNATIONS;
   const selectedIdsRef = useRef(selectedIds);
   const availableProgramPlans = useMemo(() => {
     const planMap = new Map<string, ProgramPlan>();
@@ -755,6 +821,9 @@ export default function CourseExplorer({
     );
     const storedSelections = window.localStorage.getItem(
       SELECTED_BY_TERM_STORAGE_KEY,
+    );
+    const storedDesignations = window.localStorage.getItem(
+      DESIGNATIONS_BY_TERM_STORAGE_KEY,
     );
     const legacySelected = window.localStorage.getItem(
       LEGACY_SELECTED_STORAGE_KEY,
@@ -804,6 +873,40 @@ export default function CourseExplorer({
       }
     }
 
+    let parsedDesignations: Record<
+      string,
+      Record<string, CourseDesignation>
+    > = {};
+    if (storedDesignations) {
+      try {
+        const parsed = JSON.parse(storedDesignations);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedDesignations = Object.fromEntries(
+            Object.entries(parsed)
+              .filter(
+                ([, values]) =>
+                  values &&
+                  typeof values === 'object' &&
+                  !Array.isArray(values),
+              )
+              .map(([termId, values]) => [
+                termId,
+                Object.fromEntries(
+                  Object.entries(values as Record<string, unknown>).filter(
+                    ([, value]) =>
+                      value === 'degree' ||
+                      value === 'non-degree' ||
+                      value === 'unset',
+                  ),
+                ),
+              ]),
+          ) as Record<string, Record<string, CourseDesignation>>;
+        }
+      } catch {
+        window.localStorage.removeItem(DESIGNATIONS_BY_TERM_STORAGE_KEY);
+      }
+    }
+
     let parsedProgramPlans: ProgramPlan[] = [];
     if (storedProgramPlans) {
       try {
@@ -842,6 +945,7 @@ export default function CourseExplorer({
     setCustomProgramPlans(parsedProgramPlans);
     setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
     setSelectedByTerm(parsedSelections);
+    setDesignationsByTerm(parsedDesignations);
     setStorageReady(true);
   }, []);
 
@@ -865,6 +969,14 @@ export default function CourseExplorer({
   useEffect(() => {
     if (!storageReady) return;
     window.localStorage.setItem(
+      DESIGNATIONS_BY_TERM_STORAGE_KEY,
+      JSON.stringify(designationsByTerm),
+    );
+  }, [designationsByTerm, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem(
       PROGRAM_PLANS_STORAGE_KEY,
       JSON.stringify(customProgramPlans),
     );
@@ -881,6 +993,29 @@ export default function CourseExplorer({
     },
     [activeTermId],
   );
+
+  function courseDesignation(course: Course): CourseDesignation {
+    return (
+      activeDesignations[course.code] ||
+      (isNonDegreeOnly(course) ? 'non-degree' : 'unset')
+    );
+  }
+
+  function setCourseDesignation(
+    course: Course,
+    designation: CourseDesignation,
+  ) {
+    const nextDesignation = isNonDegreeOnly(course)
+      ? 'non-degree'
+      : designation;
+    setDesignationsByTerm((current) => ({
+      ...current,
+      [activeTermId]: {
+        ...current[activeTermId],
+        [course.code]: nextDesignation,
+      },
+    }));
+  }
 
   async function handleCourseDataImport(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -1184,6 +1319,163 @@ export default function CourseExplorer({
     return pairs;
   }, [selectedCourses]);
 
+  const semesterMinimumTarget = /秋季|春季/.test(activeDataset.label)
+    ? 10
+    : null;
+  const semesterEligibleCredits = selectedCourses
+    .filter(countsTowardSemesterMinimum)
+    .reduce((sum, course) => sum + course.credits, 0);
+  const selectedPublicRequiredCredits = selectedCourses
+    .filter((course) => course.category === '公共必修课')
+    .reduce((sum, course) => sum + course.credits, 0);
+  const selectedPublicElectiveCredits = selectedCourses
+    .filter((course) => course.category === '公共选修课')
+    .reduce((sum, course) => sum + course.credits, 0);
+  const selectedInnovationCredits = selectedCourses
+    .filter((course) =>
+      INNOVATION_COURSE_NAMES.has(courseBaseName(course.name)),
+    )
+    .reduce((sum, course) => sum + course.credits, 0);
+  const selectedSportsCourses = selectedCourses.filter(
+    (course) => course.subject === '体育学',
+  );
+  const selectedDegreeCoreCount = selectedCourses.filter(
+    (course) =>
+      courseDesignation(course) === 'degree' &&
+      activePlan.coreCourses.includes(course.name),
+  ).length;
+  const selectedDegreeProfessionalCount = selectedCourses.filter(
+    (course) =>
+      courseDesignation(course) === 'degree' &&
+      activePlan.professionalCourses.includes(course.name),
+  ).length;
+  const unsetDesignationCount = selectedCourses.filter(
+    (course) => courseDesignation(course) === 'unset',
+  ).length;
+  const invalidDegreeCourses = selectedCourses.filter(
+    (course) =>
+      activeDesignations[course.code] === 'degree' && isNonDegreeOnly(course),
+  );
+  const publicElectiveTarget =
+    activePlan.publicElectiveCredits + (activePlan.innovationCredits ?? 0);
+  const checkupItems: CheckupItem[] = [
+    {
+      id: 'credits',
+      title: '学期有效学分',
+      value:
+        semesterMinimumTarget === null
+          ? `${formatCredits(semesterEligibleCredits)} 学分`
+          : `${formatCredits(semesterEligibleCredits)} / ${semesterMinimumTarget} 学分`,
+      detail:
+        semesterMinimumTarget === null
+          ? '当前学期未设置自动门槛，请以对应学期通知为准。'
+          : 'HIAS 讲堂、科学前沿讲座和人文系列讲座不计入该门槛。',
+      status:
+        semesterMinimumTarget === null
+          ? 'info'
+          : semesterEligibleCredits >= semesterMinimumTarget
+            ? 'pass'
+            : 'attention',
+    },
+    {
+      id: 'conflicts',
+      title: '课程时间冲突',
+      value: conflictPairs.length ? `${conflictPairs.length} 组冲突` : '无冲突',
+      detail: conflictPairs.length
+        ? '请返回课程列表查看冲突课程和可替代班次。'
+        : '当前已选课程的星期、节次和教学周没有重叠。',
+      status: conflictPairs.length ? 'attention' : 'pass',
+    },
+    {
+      id: 'designation',
+      title: '学位课属性',
+      value: unsetDesignationCount
+        ? `${unsetDesignationCount} 门未确定`
+        : '全部已设置',
+      detail: invalidDegreeCourses.length
+        ? `${invalidDegreeCourses.map((course) => course.name).join('、')}只能作为非学位课。`
+        : '请在下方逐门确认学位课或非学位课属性。',
+      status:
+        unsetDesignationCount || invalidDegreeCourses.length
+          ? 'attention'
+          : 'pass',
+    },
+    {
+      id: 'core',
+      title: '核心课作为学位课',
+      value: `${selectedDegreeCoreCount} / ${activePlan.coreMinimum} 门`,
+      detail: '这是培养阶段要求，不代表必须在当前学期一次完成。',
+      status:
+        selectedDegreeCoreCount >= activePlan.coreMinimum ? 'pass' : 'info',
+    },
+    {
+      id: 'professional',
+      title: '专业课作为学位课',
+      value: `${selectedDegreeProfessionalCount} / ${activePlan.professionalMinimum} 门`,
+      detail: '仅统计当前培养方向课程库中已标记为学位课的课程。',
+      status:
+        selectedDegreeProfessionalCount >= activePlan.professionalMinimum
+          ? 'pass'
+          : 'info',
+    },
+    {
+      id: 'public-required',
+      title: '公共必修课',
+      value:
+        activePlan.publicRequiredCredits === null
+          ? `${formatCredits(selectedPublicRequiredCredits)} 学分`
+          : `${formatCredits(selectedPublicRequiredCredits)} / ${activePlan.publicRequiredCredits} 学分`,
+      detail: '英语免修、慕课资格等无法由课表判断，需要自行结合认定结果核对。',
+      status:
+        activePlan.publicRequiredCredits === null
+          ? 'info'
+          : selectedPublicRequiredCredits >= activePlan.publicRequiredCredits
+            ? 'pass'
+            : 'info',
+    },
+    {
+      id: 'public-elective',
+      title: '公共选修课',
+      value: `${formatCredits(selectedPublicElectiveCredits)} / ${formatCredits(publicElectiveTarget)} 学分`,
+      detail:
+        activePlan.innovationCredits === null
+          ? '按当前培养方向的公共选修课要求统计。'
+          : `专硕合计要求中包含 ${formatCredits(activePlan.innovationCredits)} 学分创新创业模块。`,
+      status:
+        selectedPublicElectiveCredits >= publicElectiveTarget ? 'pass' : 'info',
+    },
+    ...(activePlan.innovationCredits === null
+      ? []
+      : [
+          {
+            id: 'innovation',
+            title: '创新创业模块',
+            value: `${formatCredits(selectedInnovationCredits)} / ${formatCredits(activePlan.innovationCredits)} 学分`,
+            detail: '按照选课须知中的创新创业模块课程名单识别。',
+            status:
+              selectedInnovationCredits >= activePlan.innovationCredits
+                ? ('pass' as const)
+                : ('info' as const),
+          },
+        ]),
+    {
+      id: 'sports',
+      title: '体育类公共选修课',
+      value: `${selectedSportsCourses.length} / 1 门`,
+      detail:
+        selectedSportsCourses.length > 1
+          ? `已选择：${selectedSportsCourses.map((course) => course.name).join('、')}。`
+          : '选课须知规定体育类公共选修课每学期限选 1 门。',
+      status: selectedSportsCourses.length <= 1 ? 'pass' : 'attention',
+    },
+  ];
+  const passedCheckCount = checkupItems.filter(
+    (item) => item.status === 'pass',
+  ).length;
+  const attentionCheckCount = checkupItems.filter(
+    (item) => item.status === 'attention',
+  ).length;
+
   const conflictPeers = useMemo(() => {
     const peers = new Map<string, Course[]>();
     conflictPairs.forEach(({ left, right }) => {
@@ -1263,6 +1555,15 @@ export default function CourseExplorer({
   ]);
 
   function toggleCourse(id: string) {
+    const course = initialCourses.find((item) => item.id === id);
+    if (
+      course &&
+      !selectedIds.includes(id) &&
+      isNonDegreeOnly(course) &&
+      !activeDesignations[course.code]
+    ) {
+      setCourseDesignation(course, 'non-degree');
+    }
     setSelectedIdsForActive((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
@@ -1271,6 +1572,21 @@ export default function CourseExplorer({
   }
 
   function replaceCourse(sourceId: string, replacementId: string) {
+    const source = initialCourses.find((course) => course.id === sourceId);
+    const replacement = initialCourses.find(
+      (course) => course.id === replacementId,
+    );
+    if (source && replacement) {
+      const designation = courseDesignation(source);
+      setDesignationsByTerm((current) => {
+        const next = { ...current[activeTermId] };
+        delete next[source.code];
+        next[replacement.code] = isNonDegreeOnly(replacement)
+          ? 'non-degree'
+          : designation;
+        return { ...current, [activeTermId]: next };
+      });
+    }
     setSelectedIdsForActive((current) => [
       ...current.filter((id) => id !== sourceId && id !== replacementId),
       replacementId,
@@ -1320,6 +1636,10 @@ export default function CourseExplorer({
     );
     if (!confirmed) return;
     setSelectedIdsForActive([]);
+    setDesignationsByTerm((current) => ({
+      ...current,
+      [activeTermId]: {},
+    }));
   }
 
   function exportSelected() {
@@ -1655,6 +1975,13 @@ export default function CourseExplorer({
                   <BookOpen /> 课程列表
                 </button>
                 <button
+                  className={`view-tab ${view === 'checkup' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('checkup')}
+                  type="button"
+                >
+                  <ShieldCheck /> 选课体检
+                </button>
+                <button
                   className={`view-tab ${view === 'guide' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('guide')}
                   type="button"
@@ -1847,6 +2174,20 @@ export default function CourseExplorer({
                                 时间冲突
                               </Badge>
                             )}
+                            {selected && (
+                              <Badge
+                                className={
+                                  courseDesignation(course) === 'degree'
+                                    ? 'bg-indigo-50 text-indigo-700'
+                                    : courseDesignation(course) === 'non-degree'
+                                      ? 'bg-teal-50 text-teal-700'
+                                      : 'bg-amber-50 text-amber-700'
+                                }
+                                variant="secondary"
+                              >
+                                {designationLabel(courseDesignation(course))}
+                              </Badge>
+                            )}
                           </div>
                           <button
                             className="course-title text-left font-bold tracking-tight text-slate-900 hover:text-blue-700"
@@ -1944,6 +2285,189 @@ export default function CourseExplorer({
                 </Button>
               </div>
             )}
+          </section>
+        ) : view === 'checkup' ? (
+          <section className="py-6">
+            <div className="section-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p>SELECTION CHECKUP</p>
+                <h2>选课方案体检</h2>
+                <div className="section-description">
+                  结合当前培养方向和选课须知检查已选课程。结果仅用于发现明显遗漏，不能替代导师、学院和教务系统审核。
+                </div>
+              </div>
+              <label
+                className="min-w-64 text-sm font-medium text-slate-600"
+                htmlFor="checkup-plan"
+              >
+                当前培养方向
+                <NativeSelect
+                  aria-label="选择体检培养方向"
+                  className="mt-2 w-full [&>select]:h-11"
+                  id="checkup-plan"
+                  onChange={(event) => setProgramPlanId(event.target.value)}
+                  value={programPlanId}
+                >
+                  {availableProgramPlans.map((plan) => (
+                    <NativeSelectOption key={plan.id} value={plan.id}>
+                      {plan.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </label>
+            </div>
+
+            <div
+              className="checkup-summary"
+              data-status={
+                !selectedCourses.length
+                  ? 'empty'
+                  : attentionCheckCount
+                    ? 'attention'
+                    : 'pass'
+              }
+            >
+              <div className="checkup-summary-icon">
+                {!selectedCourses.length || !attentionCheckCount ? (
+                  <ShieldCheck />
+                ) : (
+                  <TriangleAlert />
+                )}
+              </div>
+              <div>
+                <span>{activePlan.label}</span>
+                <strong>
+                  {!selectedCourses.length
+                    ? '选择课程后开始体检'
+                    : attentionCheckCount
+                      ? `有 ${attentionCheckCount} 项需要处理`
+                      : '当前方案未发现明显问题'}
+                </strong>
+                <p>
+                  {!selectedCourses.length
+                    ? '体检结果会随已选课程和学位课属性实时更新。'
+                    : `已满足 ${passedCheckCount} / ${checkupItems.length} 项；标记为“需核对”的培养阶段要求不计为硬性错误。`}
+                </p>
+              </div>
+              <div className="checkup-summary-credit">
+                <b>{formatCredits(semesterEligibleCredits)}</b>
+                <span>有效学分</span>
+              </div>
+            </div>
+
+            <div className="checkup-grid mt-5">
+              {checkupItems.map((item) => (
+                <article
+                  className="checkup-card"
+                  data-status={item.status}
+                  key={item.id}
+                >
+                  <div className="checkup-card-icon">
+                    {item.status === 'pass' ? (
+                      <CheckCircle2 />
+                    ) : item.status === 'attention' ? (
+                      <TriangleAlert />
+                    ) : (
+                      <Info />
+                    )}
+                  </div>
+                  <div>
+                    <span>
+                      {item.status === 'pass'
+                        ? '已满足'
+                        : item.status === 'attention'
+                          ? '需要处理'
+                          : '需核对'}
+                    </span>
+                    <h3>{item.title}</h3>
+                    <strong>{item.value}</strong>
+                    <p>{item.detail}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="designation-panel mt-5">
+              <div className="designation-panel-head">
+                <div>
+                  <p>COURSE DESIGNATION</p>
+                  <h3>设置学位课属性</h3>
+                  <span>
+                    该设置仅保存在当前浏览器，正式选课时仍需在选课系统中再次确认。
+                  </span>
+                </div>
+                <Badge variant="secondary">
+                  {selectedCourses.length - unsetDesignationCount} /{' '}
+                  {selectedCourses.length} 门已设置
+                </Badge>
+              </div>
+
+              {selectedCourses.length ? (
+                <div className="designation-list">
+                  {selectedCourses.map((course) => {
+                    const designation = courseDesignation(course);
+                    const nonDegreeOnly = isNonDegreeOnly(course);
+                    return (
+                      <div className="designation-row" key={course.id}>
+                        <button
+                          onClick={() => setDetailCourse(course)}
+                          type="button"
+                        >
+                          <strong>{course.name}</strong>
+                          <span>
+                            {course.category} · {formatCredits(course.credits)}{' '}
+                            学分
+                          </span>
+                        </button>
+                        <div className="designation-control">
+                          <NativeSelect
+                            aria-label={`设置${course.name}的学位课属性`}
+                            className="w-full min-w-36 [&>select]:h-10"
+                            onChange={(event) =>
+                              setCourseDesignation(
+                                course,
+                                event.target.value as CourseDesignation,
+                              )
+                            }
+                            value={designation}
+                          >
+                            <NativeSelectOption
+                              disabled={nonDegreeOnly}
+                              value="unset"
+                            >
+                              未确定
+                            </NativeSelectOption>
+                            <NativeSelectOption
+                              disabled={nonDegreeOnly}
+                              value="degree"
+                            >
+                              学位课
+                            </NativeSelectOption>
+                            <NativeSelectOption value="non-degree">
+                              非学位课
+                            </NativeSelectOption>
+                          </NativeSelect>
+                          {nonDegreeOnly && (
+                            <small>按选课须知只能作为非学位课</small>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="designation-empty">
+                  <ClipboardList />
+                  <div>
+                    <strong>还没有已选课程</strong>
+                    <span>先从课程列表选择课程，再回来设置属性。</span>
+                  </div>
+                  <Button onClick={() => setView('courses')} variant="outline">
+                    去选择课程
+                  </Button>
+                </div>
+              )}
+            </div>
           </section>
         ) : view === 'notice' ? (
           <section className="py-6">
@@ -2516,6 +3040,49 @@ export default function CourseExplorer({
                     ))}
                   </div>
                 </div>
+                {selectedIds.includes(detailCourse.id) && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                    <label
+                      className="text-sm font-semibold text-slate-700"
+                      htmlFor="detail-course-designation"
+                    >
+                      学位课属性
+                      <NativeSelect
+                        aria-label={`设置${detailCourse.name}的学位课属性`}
+                        className="mt-2 w-full [&>select]:h-10"
+                        id="detail-course-designation"
+                        onChange={(event) =>
+                          setCourseDesignation(
+                            detailCourse,
+                            event.target.value as CourseDesignation,
+                          )
+                        }
+                        value={courseDesignation(detailCourse)}
+                      >
+                        <NativeSelectOption
+                          disabled={isNonDegreeOnly(detailCourse)}
+                          value="unset"
+                        >
+                          未确定
+                        </NativeSelectOption>
+                        <NativeSelectOption
+                          disabled={isNonDegreeOnly(detailCourse)}
+                          value="degree"
+                        >
+                          学位课
+                        </NativeSelectOption>
+                        <NativeSelectOption value="non-degree">
+                          非学位课
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </label>
+                    {isNonDegreeOnly(detailCourse) && (
+                      <p className="mt-2 text-xs leading-5 text-amber-700">
+                        该课程按选课须知只能作为非学位课修读。
+                      </p>
+                    )}
+                  </div>
+                )}
                 <Button
                   className="h-11 w-full rounded-xl"
                   onClick={() => toggleCourse(detailCourse.id)}
