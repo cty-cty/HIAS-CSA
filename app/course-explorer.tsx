@@ -1036,7 +1036,7 @@ export default function CourseExplorer({
                   disabled={!selectedCourses.length}
                   variant="outline"
                 >
-                  <Download /> 导出 WakeUp CSV
+                  <Download /> 导出 CSV
                 </Button>
               </div>
               <p className="mt-2 text-[0.72rem] leading-5 text-slate-500">
