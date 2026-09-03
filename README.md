@@ -55,11 +55,12 @@ npm run build:offline
 {
   "termId": "2027-spring",
   "label": "2027 春季",
+  "audience": "适用对象以对应培养方案和学校通知为准",
   "courses": []
 }
 ```
 
-其中 `courses` 内的课程字段需与 `app/courses.json` 保持一致；如果没有提供 `termId` 或 `label`，网页会根据文件名建立学期名称。
+其中 `courses` 内的课程字段需与 `app/courses.json` 保持一致；`audience` 可选，用于更新页面顶部的适用对象提示。如果没有提供 `termId` 或 `label`，网页会根据文件名建立学期名称。
 
 ### 导入其他培养方案
 
@@ -90,7 +91,7 @@ npm run build:offline
 }
 ```
 
-`professionalNonDegreeCredits` 或 `innovationCredits` 不单列时可填 `null`。导入后网页会显示方案来源和更新时间，并按课程名称统计本学期课表中的可匹配课程。
+`publicRequiredCredits`、`professionalNonDegreeCredits` 或 `innovationCredits` 未在材料中明确时可填 `null`，网页会显示“材料未明确”或“不限”。导入后网页会显示方案来源和更新时间，并按课程名称统计本学期课表中的可匹配课程。
 
 ## 导入 WakeUp 课程表
 

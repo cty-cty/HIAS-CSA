@@ -86,7 +86,8 @@ type CourseDataset = {
   id: string;
   label: string;
   courses: Course[];
-  updatedAt: string;
+  updatedAt?: string;
+  audience?: string;
 };
 
 const DEFAULT_TERM_ID = '2026-fall';
@@ -380,6 +381,27 @@ function validateCourseRows(rawCourses: unknown[]) {
       errors.push(`第 ${row} 门课程的字段不完整或格式不正确`);
       return;
     }
+    if (
+      [
+        value.id,
+        value.code,
+        value.name,
+        value.college,
+        value.category,
+        value.level,
+        value.subject,
+        value.teacher,
+        value.teachingMode,
+        value.examMode,
+      ].some((field) => !field.trim())
+    ) {
+      errors.push(`第 ${row} 门课程包含空的关键字段`);
+    }
+    if (value.capacity > 0 && value.enrolled > value.capacity) {
+      errors.push(
+        `第 ${row} 门课程的已选人数超过限选人数：${value.enrolled}/${value.capacity}`,
+      );
+    }
     if (seenIds.has(value.id))
       errors.push(`第 ${row} 门课程的 id 重复：${value.id}`);
     if (seenCodes.has(value.code)) {
@@ -407,6 +429,10 @@ function validateCourseRows(rawCourses: unknown[]) {
 function isProgramPlan(value: unknown): value is ProgramPlan {
   if (!value || typeof value !== 'object') return false;
   const plan = value as Partial<ProgramPlan>;
+  const isNonNegativeNumber = (candidate: unknown) =>
+    typeof candidate === 'number' &&
+    Number.isFinite(candidate) &&
+    candidate >= 0;
   const textFields = [
     plan.id,
     plan.label,
@@ -427,17 +453,24 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
   return (
     textFields.every((value) => typeof value === 'string' && value.trim()) &&
     creditFields.every(
-      (value) =>
-        value === null || (typeof value === 'number' && Number.isFinite(value)),
+      (value) => value === null || isNonNegativeNumber(value),
     ) &&
+    (plan.publicRequiredCredits === null ||
+      isNonNegativeNumber(plan.publicRequiredCredits)) &&
     (plan.professionalNonDegreeCredits === null ||
-      typeof plan.professionalNonDegreeCredits === 'number') &&
+      isNonNegativeNumber(plan.professionalNonDegreeCredits)) &&
     (plan.innovationCredits === null ||
-      typeof plan.innovationCredits === 'number') &&
+      isNonNegativeNumber(plan.innovationCredits)) &&
     Array.isArray(plan.coreCourses) &&
-    plan.coreCourses.every((course) => typeof course === 'string') &&
+    plan.coreCourses.length > 0 &&
+    plan.coreCourses.every(
+      (course) => typeof course === 'string' && course.trim(),
+    ) &&
     Array.isArray(plan.professionalCourses) &&
-    plan.professionalCourses.every((course) => typeof course === 'string') &&
+    plan.professionalCourses.length > 0 &&
+    plan.professionalCourses.every(
+      (course) => typeof course === 'string' && course.trim(),
+    ) &&
     (plan.source === undefined || typeof plan.source === 'string') &&
     (plan.updatedAt === undefined || typeof plan.updatedAt === 'string') &&
     (plan.note === undefined || typeof plan.note === 'string')
@@ -522,6 +555,10 @@ function parseCourseDataset(text: string, fileName: string): CourseDataset {
     label: labelValue,
     courses: rawCourses,
     updatedAt: new Date().toISOString(),
+    audience:
+      typeof record?.audience === 'string' && record.audience.trim()
+        ? record.audience.trim()
+        : undefined,
   };
 }
 
@@ -588,6 +625,13 @@ export default function CourseExplorer({
     courses: defaultCourses,
     updatedAt: '',
   };
+  const isDefaultTerm = activeDataset.id === DEFAULT_TERM_ID;
+  const audienceLabel =
+    activeDataset.audience ||
+    (isDefaultTerm ? '2026 级研一新生专用' : '适用对象以课程数据说明为准');
+  const heroDescription = isDefaultTerm
+    ? '课程数据依据已整理的 2026 年秋季课表与培养方案材料，仅供参考，用于帮助大家模拟选课、查看冲突与规划学分；最终课程安排请以学校正式通知和选课系统为准。'
+    : `当前使用“${activeDataset.label}”课程数据，仅供参考，用于模拟选课、查看冲突与规划学分；适用年级、培养要求和最终课程安排请以对应学校通知及选课系统为准。`;
   const initialCourses = activeDataset.courses;
   const availableDatasets = useMemo(
     () => [
@@ -644,7 +688,9 @@ export default function CourseExplorer({
               typeof dataset.id === 'string' &&
               typeof dataset.label === 'string' &&
               Array.isArray(dataset.courses) &&
-              dataset.courses.every(isCourse),
+              dataset.courses.every(isCourse) &&
+              (dataset.audience === undefined ||
+                typeof dataset.audience === 'string'),
           )
         ) {
           parsedDatasets = parsed;
@@ -1246,12 +1292,11 @@ export default function CourseExplorer({
                 {activeDataset.label}预选课助手
               </h1>
               <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
-                课程数据依据已整理的 2026 年秋季课表与培养方案材料，仅供参考，
-                用于帮助大家模拟选课、查看冲突与规划学分；最终课程安排请以学校正式通知和选课系统为准。
+                {heroDescription}
               </p>
               <div className="hero-meta mt-5">
                 <span>
-                  <Users /> 2026 级研一新生专用
+                  <Users /> {audienceLabel}
                 </span>
                 <span>
                   <FileSpreadsheet /> {activeDataset.label}课表数据
@@ -1884,7 +1929,12 @@ export default function CourseExplorer({
 
             <div className="requirement-grid mt-4">
               {[
-                ['公共必修课', `${activePlan.publicRequiredCredits} 学分`],
+                [
+                  '公共必修课',
+                  activePlan.publicRequiredCredits === null
+                    ? '材料未明确'
+                    : `${activePlan.publicRequiredCredits} 学分`,
+                ],
                 ['专业学位课', `≥${activePlan.degreeCourseCredits} 学分`],
                 [
                   '专业非学位课',
@@ -2026,8 +2076,9 @@ export default function CourseExplorer({
             <div className="source-compare-note mt-5">
               <Info />
               <span>
-                培养要求与课程库依据
-                PPT；本学期课程的学分、教师、时间和教室仍以秋季课表为准。
+                培养要求与课程库依据{' '}
+                {activePlan.source || '已整理的培养方案材料'}；
+                本学期课程的学分、教师、时间和教室仍以当前课程数据为准。
                 {activePlan.program === '物理电子学' &&
                   ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
               </span>
@@ -2111,8 +2162,8 @@ export default function CourseExplorer({
             <div className="source-compare-note mt-5">
               <FileSpreadsheet />
               <span>
-                考试方式来自 2026
-                年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量，不能替代正式考试安排。
+                考试方式来自 {activeDataset.label}{' '}
+                课程数据；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量，不能替代正式考试安排。
               </span>
             </div>
           </section>

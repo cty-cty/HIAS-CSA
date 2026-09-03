@@ -5,7 +5,7 @@ export type ProgramPlan = {
   program: string;
   code: string;
   totalCredits: number;
-  publicRequiredCredits: number;
+  publicRequiredCredits: number | null;
   degreeCourseCredits: number;
   professionalNonDegreeCredits: number | null;
   publicElectiveCredits: number;
@@ -98,7 +98,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     program: '人工智能',
     code: '085410 人工智能',
     totalCredits: 25,
-    publicRequiredCredits: 8,
+    publicRequiredCredits: null,
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: 2,
     publicElectiveCredits: 2,
@@ -121,7 +121,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     program: '材料工程',
     code: '085601 材料工程',
     totalCredits: 25,
-    publicRequiredCredits: 8,
+    publicRequiredCredits: null,
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: 2,
     publicElectiveCredits: 2,
