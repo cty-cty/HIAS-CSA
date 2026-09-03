@@ -30,6 +30,7 @@ import {
   Sparkles,
   Star,
   Target,
+  Trash2,
   Users,
   X,
   Zap,
@@ -907,6 +908,15 @@ export default function CourseExplorer({
     setDataMessage('');
   }
 
+  function clearSelectedCourses() {
+    if (!selectedCourses.length) return;
+    const confirmed = window.confirm(
+      '确定清空“' + activeDataset.label + '”的全部已选课程吗？',
+    );
+    if (!confirmed) return;
+    setSelectedIdsForActive([]);
+  }
+
   function exportSelected() {
     const header = [
       '课程名称',
@@ -1042,6 +1052,14 @@ export default function CourseExplorer({
               <p className="mt-2 text-[0.72rem] leading-5 text-slate-500">
                 导出格式符合 WakeUp 课程表模板；确认课程安排无误后再导入。
               </p>
+              <Button
+                className="mt-2 h-9 w-full rounded-lg border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                disabled={!selectedCourses.length}
+                onClick={clearSelectedCourses}
+                variant="outline"
+              >
+                <Trash2 /> 清空当前学期已选课程
+              </Button>
             </aside>
           </div>
         </section>
