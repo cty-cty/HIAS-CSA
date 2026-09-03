@@ -1000,15 +1000,18 @@ export default function CourseExplorer({
                   </div>
                 </div>
                 {selectedCreditBreakdown.length > 0 ? (
-                  <div className="credit-breakdown mt-4">
-                    {selectedCreditBreakdown
-                      .slice(0, 3)
-                      .map(([label, credits]) => (
+                  <>
+                    <div className="mt-4 text-xs font-semibold text-slate-500">
+                      已选类别明细
+                    </div>
+                    <div className="credit-breakdown mt-2">
+                      {selectedCreditBreakdown.map(([label, credits]) => (
                         <span key={label}>
                           {label} {formatCredits(credits)}
                         </span>
                       ))}
-                  </div>
+                    </div>
+                  </>
                 ) : (
                   <div className="credit-empty mt-4">
                     选择课程后，这里会汇总学分
