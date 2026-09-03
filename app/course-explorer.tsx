@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   BookOpen,
   BarChart3,
@@ -16,6 +23,7 @@ import {
   MapPin,
   Presentation,
   Repeat2,
+  RefreshCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -73,6 +81,21 @@ type Course = {
   teacher: string;
   schedules: Schedule[];
 };
+
+type CourseDataset = {
+  id: string;
+  label: string;
+  courses: Course[];
+  updatedAt: string;
+};
+
+const DEFAULT_TERM_ID = '2026-fall';
+const DEFAULT_TERM_LABEL = '2026 秋季';
+const COURSE_DATASETS_STORAGE_KEY = 'hias-course-datasets-v1';
+const ACTIVE_TERM_STORAGE_KEY = 'hias-active-term-v1';
+const SELECTED_BY_TERM_STORAGE_KEY = 'hias-selected-by-term-v1';
+const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
+const EMPTY_SELECTED_IDS: string[] = [];
 
 type ConflictSlot = {
   day: string;
@@ -253,6 +276,68 @@ function csvCell(value: string | number) {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
+function isCourse(value: unknown): value is Course {
+  if (!value || typeof value !== 'object') return false;
+  const course = value as Partial<Course>;
+  return (
+    typeof course.id === 'string' &&
+    typeof course.code === 'string' &&
+    typeof course.name === 'string' &&
+    typeof course.credits === 'number' &&
+    Array.isArray(course.schedules)
+  );
+}
+
+function termIdFromLabel(label: string) {
+  const normalized = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'imported-' + Date.now();
+}
+
+function parseCourseDataset(text: string, fileName: string): CourseDataset {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('数据文件不是有效的 JSON。请使用课程数据 courses.json。');
+  }
+
+  const isObject =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed);
+  const record = isObject ? (parsed as Record<string, unknown>) : null;
+  const rawCourses = Array.isArray(parsed) ? parsed : record?.courses;
+  if (!Array.isArray(rawCourses) || !rawCourses.length) {
+    throw new Error(
+      '没有找到课程数组。支持直接上传 courses.json，或上传包含 courses 字段的 JSON 文件。',
+    );
+  }
+  if (!rawCourses.every(isCourse)) {
+    throw new Error(
+      '课程数据字段不完整，至少需要 id、code、name、credits 和 schedules。',
+    );
+  }
+
+  const baseName = fileName.replace(/\.[^/.]+$/, '').trim();
+  const labelValue =
+    (typeof record?.label === 'string' && record.label.trim()) ||
+    (typeof record?.termLabel === 'string' && record.termLabel.trim()) ||
+    (typeof record?.term === 'string' && record.term.trim()) ||
+    baseName ||
+    '导入课程数据';
+  const idValue =
+    (typeof record?.termId === 'string' && record.termId.trim()) || labelValue;
+
+  return {
+    id: termIdFromLabel(idValue),
+    label: labelValue,
+    courses: rawCourses,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function ScheduleLines({ schedules }: { schedules: Schedule[] }) {
   return (
     <div className="space-y-1.5">
@@ -275,17 +360,23 @@ function ScheduleLines({ schedules }: { schedules: Schedule[] }) {
 }
 
 export default function CourseExplorer({
-  initialCourses,
+  initialCourses: defaultCourses,
 }: {
   initialCourses: Course[];
 }) {
+  const [customDatasets, setCustomDatasets] = useState<CourseDataset[]>([]);
+  const [activeTermId, setActiveTermId] = useState(DEFAULT_TERM_ID);
+  const [selectedByTerm, setSelectedByTerm] = useState<
+    Record<string, string[]>
+  >({});
   const [query, setQuery] = useState('');
   const [college, setCollege] = useState('全部院系');
   const [subject, setSubject] = useState('全部学科/专业');
   const [category, setCategory] = useState('全部类别');
   const [day, setDay] = useState('全部星期');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [storageReady, setStorageReady] = useState(false);
+  const [dataMessage, setDataMessage] = useState('');
+  const [dataError, setDataError] = useState('');
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
   const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>(
@@ -295,6 +386,29 @@ export default function CourseExplorer({
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
+  const dataFileRef = useRef<HTMLInputElement>(null);
+  const activeDataset = customDatasets.find(
+    (dataset) => dataset.id === activeTermId,
+  ) ?? {
+    id: DEFAULT_TERM_ID,
+    label: DEFAULT_TERM_LABEL,
+    courses: defaultCourses,
+    updatedAt: '',
+  };
+  const initialCourses = activeDataset.courses;
+  const availableDatasets = useMemo(
+    () => [
+      customDatasets.find((dataset) => dataset.id === DEFAULT_TERM_ID) ?? {
+        id: DEFAULT_TERM_ID,
+        label: DEFAULT_TERM_LABEL,
+        courses: defaultCourses,
+        updatedAt: '',
+      },
+      ...customDatasets.filter((dataset) => dataset.id !== DEFAULT_TERM_ID),
+    ],
+    [customDatasets, defaultCourses],
+  );
+  const selectedIds = selectedByTerm[activeTermId] ?? EMPTY_SELECTED_IDS;
   const selectedIdsRef = useRef(selectedIds);
 
   useEffect(() => {
@@ -302,25 +416,149 @@ export default function CourseExplorer({
   }, [selectedIds]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem('ucas-hangzhou-selected');
-    if (stored) {
+    const storedDatasets = window.localStorage.getItem(
+      COURSE_DATASETS_STORAGE_KEY,
+    );
+    const storedActiveTerm = window.localStorage.getItem(
+      ACTIVE_TERM_STORAGE_KEY,
+    );
+    const storedSelections = window.localStorage.getItem(
+      SELECTED_BY_TERM_STORAGE_KEY,
+    );
+    const legacySelected = window.localStorage.getItem(
+      LEGACY_SELECTED_STORAGE_KEY,
+    );
+
+    let parsedDatasets: CourseDataset[] = [];
+    if (storedDatasets) {
       try {
-        setSelectedIds(JSON.parse(stored));
+        const parsed = JSON.parse(storedDatasets);
+        if (
+          Array.isArray(parsed) &&
+          parsed.every(
+            (dataset) =>
+              dataset &&
+              typeof dataset.id === 'string' &&
+              typeof dataset.label === 'string' &&
+              Array.isArray(dataset.courses) &&
+              dataset.courses.every(isCourse),
+          )
+        ) {
+          parsedDatasets = parsed;
+        }
       } catch {
-        window.localStorage.removeItem('ucas-hangzhou-selected');
+        window.localStorage.removeItem(COURSE_DATASETS_STORAGE_KEY);
       }
     }
+
+    let parsedSelections: Record<string, string[]> = {};
+    if (storedSelections) {
+      try {
+        const parsed = JSON.parse(storedSelections);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          parsedSelections = Object.fromEntries(
+            Object.entries(parsed).filter(
+              ([, ids]) =>
+                Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+            ),
+          ) as Record<string, string[]>;
+        }
+      } catch {
+        window.localStorage.removeItem(SELECTED_BY_TERM_STORAGE_KEY);
+      }
+    }
+    if (!Object.keys(parsedSelections).length && legacySelected) {
+      try {
+        const legacyIds = JSON.parse(legacySelected);
+        if (
+          Array.isArray(legacyIds) &&
+          legacyIds.every((id) => typeof id === 'string')
+        ) {
+          parsedSelections[DEFAULT_TERM_ID] = legacyIds;
+        }
+      } catch {
+        window.localStorage.removeItem(LEGACY_SELECTED_STORAGE_KEY);
+      }
+    }
+
+    const nextActiveTerm =
+      storedActiveTerm === DEFAULT_TERM_ID ||
+      parsedDatasets.some((dataset) => dataset.id === storedActiveTerm)
+        ? storedActiveTerm
+        : DEFAULT_TERM_ID;
+    setCustomDatasets(parsedDatasets);
+    setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
+    setSelectedByTerm(parsedSelections);
     setStorageReady(true);
   }, []);
 
   useEffect(() => {
-    if (storageReady) {
-      window.localStorage.setItem(
-        'ucas-hangzhou-selected',
-        JSON.stringify(selectedIds),
+    if (!storageReady) return;
+    window.localStorage.setItem(
+      COURSE_DATASETS_STORAGE_KEY,
+      JSON.stringify(customDatasets),
+    );
+    window.localStorage.setItem(ACTIVE_TERM_STORAGE_KEY, activeTermId);
+  }, [activeTermId, customDatasets, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem(
+      SELECTED_BY_TERM_STORAGE_KEY,
+      JSON.stringify(selectedByTerm),
+    );
+  }, [selectedByTerm, storageReady]);
+
+  const setSelectedIdsForActive = useCallback(
+    (next: string[] | ((current: string[]) => string[])) => {
+      setSelectedByTerm((current) => {
+        const currentIds = current[activeTermId] ?? [];
+        const nextIds = typeof next === 'function' ? next(currentIds) : next;
+        selectedIdsRef.current = nextIds;
+        return { ...current, [activeTermId]: nextIds };
+      });
+    },
+    [activeTermId],
+  );
+
+  async function handleCourseDataImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setDataError('');
+    setDataMessage('');
+    try {
+      const parsedDataset = parseCourseDataset(await file.text(), file.name);
+      const isGenericFile = /^courses?$/i.test(
+        file.name.replace(/\.[^/.]+$/, '').trim(),
+      );
+      const dataset = isGenericFile
+        ? { ...parsedDataset, id: activeTermId, label: activeDataset.label }
+        : parsedDataset;
+      setCustomDatasets((current) => [
+        ...current.filter((item) => item.id !== dataset.id),
+        dataset,
+      ]);
+      setActiveTermId(dataset.id);
+      setSelectedByTerm((current) => ({ ...current, [dataset.id]: [] }));
+      clearFilters();
+      setDetailCourse(null);
+      setDataMessage(
+        '已加载“' +
+          dataset.label +
+          '”的 ' +
+          dataset.courses.length +
+          ' 门课程；该学期的已选课程已单独保存。',
+      );
+    } catch (error) {
+      setDataError(
+        error instanceof Error
+          ? error.message
+          : '课程数据读取失败，请检查文件格式。',
       );
     }
-  }, [selectedIds, storageReady]);
+  }
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: WebMcpContext })
@@ -371,7 +609,7 @@ export default function CourseExplorer({
             }
             const ids = codes.map((code) => courseByCode.get(code)!.id);
             selectedIdsRef.current = ids;
-            setSelectedIds(ids);
+            setSelectedIdsForActive(ids);
             await new Promise<void>((resolve) =>
               window.requestAnimationFrame(() => resolve()),
             );
@@ -412,7 +650,7 @@ export default function CourseExplorer({
       () => undefined,
     );
     return () => lifecycle.abort();
-  }, [initialCourses]);
+  }, [initialCourses, setSelectedIdsForActive]);
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
@@ -612,7 +850,7 @@ export default function CourseExplorer({
   ]);
 
   function toggleCourse(id: string) {
-    setSelectedIds((current) =>
+    setSelectedIdsForActive((current) =>
       current.includes(id)
         ? current.filter((item) => item !== id)
         : [...current, id],
@@ -620,7 +858,7 @@ export default function CourseExplorer({
   }
 
   function replaceCourse(sourceId: string, replacementId: string) {
-    setSelectedIds((current) => [
+    setSelectedIdsForActive((current) => [
       ...current.filter((id) => id !== sourceId && id !== replacementId),
       replacementId,
     ]);
@@ -652,6 +890,14 @@ export default function CourseExplorer({
     setDay('全部星期');
     setOnlySelected(false);
     setOnlyNoConflict(false);
+  }
+
+  function switchTerm(termId: string) {
+    setActiveTermId(termId);
+    clearFilters();
+    setDetailCourse(null);
+    setDataError('');
+    setDataMessage('');
   }
 
   function exportSelected() {
@@ -711,10 +957,10 @@ export default function CourseExplorer({
                 <span>研究生预选课辅助工具</span>
               </div>
               <p className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#dceee8]">
-                2026 FALL · HIAS
+                {activeDataset.label} · HIAS
               </p>
               <h1 className="max-w-3xl text-[2rem] font-bold leading-[1.18] tracking-[-0.035em] text-white sm:text-[2.45rem]">
-                杭高院 2026 秋季预选课助手
+                杭高院 {activeDataset.label}预选课助手
               </h1>
               <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
                 仅面向国科大杭州高等研究院 2026
@@ -726,7 +972,7 @@ export default function CourseExplorer({
                   <Users /> 2026 级研一新生专用
                 </span>
                 <span>
-                  <FileSpreadsheet /> 秋季课表数据
+                  <FileSpreadsheet /> {activeDataset.label}课表数据
                 </span>
                 <span>
                   <BookOpen /> {initialCourses.length} 门课程
@@ -794,6 +1040,65 @@ export default function CourseExplorer({
         </section>
 
         <section className="relative z-20 mt-3.5 rounded-[22px] border border-[#e1e5df] bg-white/94 p-3.5 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-4">
+          <div className="mb-3 flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3.5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="min-w-0">
+              <label
+                className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-500"
+                htmlFor="term-select"
+              >
+                当前课程数据学期
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <NativeSelect
+                  aria-label="切换课程数据学期"
+                  className="w-full min-w-[190px] sm:w-auto [&>select]:h-10"
+                  id="term-select"
+                  onChange={(event) => switchTerm(event.target.value)}
+                  value={activeTermId}
+                >
+                  {availableDatasets.map((dataset) => (
+                    <NativeSelectOption key={dataset.id} value={dataset.id}>
+                      {dataset.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <span className="text-xs leading-5 text-slate-500">
+                  已选课程按学期独立保存
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+              <input
+                accept=".json,application/json"
+                className="sr-only"
+                onChange={handleCourseDataImport}
+                ref={dataFileRef}
+                type="file"
+              />
+              <Button
+                className="h-10 rounded-xl border-blue-200 bg-white px-4 text-blue-700 hover:bg-blue-50"
+                onClick={() => dataFileRef.current?.click()}
+                variant="outline"
+              >
+                <RefreshCw /> 一键更新课程数据
+              </Button>
+              <span className="text-right text-[0.72rem] leading-5 text-slate-500">
+                选择课程数据 JSON（可含 term、label、courses 字段）
+              </span>
+            </div>
+          </div>
+          {(dataMessage || dataError) && (
+            <div
+              className={`mb-3 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
+                dataError
+                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              }`}
+              role={dataError ? 'alert' : 'status'}
+            >
+              {dataError || dataMessage}
+            </div>
+          )}
           <div className="grid gap-2.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(260px,1.35fr)_repeat(4,minmax(138px,.62fr))_auto]">
             <label className="relative block" htmlFor="course-search">
               <span className="sr-only">搜索课程</span>
@@ -1625,7 +1930,9 @@ export default function CourseExplorer({
         </section>
 
         <footer className="mb-4 mt-2 flex flex-col gap-2 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>国科大杭州高等研究院 · 2026 秋季预选课辅助工具</span>
+          <span>
+            国科大杭州高等研究院 · {activeDataset.label}预选课辅助工具
+          </span>
           <span>HIAS-CSA · Course Selection Assistant</span>
         </footer>
       </div>
