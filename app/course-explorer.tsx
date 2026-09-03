@@ -50,7 +50,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { PROGRAM_PLANS } from '@/app/program-plans';
+import { PROGRAM_PLANS, type ProgramPlan } from '@/app/program-plans';
 
 type Schedule = {
   day: string;
@@ -94,6 +94,7 @@ const DEFAULT_TERM_LABEL = '2026 秋季';
 const COURSE_DATASETS_STORAGE_KEY = 'hias-course-datasets-v1';
 const ACTIVE_TERM_STORAGE_KEY = 'hias-active-term-v1';
 const SELECTED_BY_TERM_STORAGE_KEY = 'hias-selected-by-term-v1';
+const PROGRAM_PLANS_STORAGE_KEY = 'hias-program-plans-v1';
 const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
 const EMPTY_SELECTED_IDS: string[] = [];
 
@@ -403,6 +404,81 @@ function validateCourseRows(rawCourses: unknown[]) {
   }
 }
 
+function isProgramPlan(value: unknown): value is ProgramPlan {
+  if (!value || typeof value !== 'object') return false;
+  const plan = value as Partial<ProgramPlan>;
+  const textFields = [
+    plan.id,
+    plan.label,
+    plan.degree,
+    plan.program,
+    plan.code,
+  ];
+  const creditFields = [
+    plan.totalCredits,
+    plan.publicRequiredCredits,
+    plan.degreeCourseCredits,
+    plan.professionalNonDegreeCredits,
+    plan.publicElectiveCredits,
+    plan.innovationCredits,
+    plan.coreMinimum,
+    plan.professionalMinimum,
+  ];
+  return (
+    textFields.every((value) => typeof value === 'string' && value.trim()) &&
+    creditFields.every(
+      (value) =>
+        value === null || (typeof value === 'number' && Number.isFinite(value)),
+    ) &&
+    (plan.professionalNonDegreeCredits === null ||
+      typeof plan.professionalNonDegreeCredits === 'number') &&
+    (plan.innovationCredits === null ||
+      typeof plan.innovationCredits === 'number') &&
+    Array.isArray(plan.coreCourses) &&
+    plan.coreCourses.every((course) => typeof course === 'string') &&
+    Array.isArray(plan.professionalCourses) &&
+    plan.professionalCourses.every((course) => typeof course === 'string') &&
+    (plan.source === undefined || typeof plan.source === 'string') &&
+    (plan.updatedAt === undefined || typeof plan.updatedAt === 'string') &&
+    (plan.note === undefined || typeof plan.note === 'string')
+  );
+}
+
+function formatUpdatedAt(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('zh-CN');
+}
+
+function parseProgramPlans(text: string): ProgramPlan[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error('培养方案文件不是有效的 JSON。');
+  }
+  const record =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  const rawPlans = Array.isArray(parsed) ? parsed : record?.plans;
+  if (!Array.isArray(rawPlans) || !rawPlans.length) {
+    throw new Error(
+      '没有找到培养方案数组。请上传方案数组或包含 plans 字段的 JSON。',
+    );
+  }
+  if (!rawPlans.every(isProgramPlan)) {
+    throw new Error(
+      '培养方案字段不完整，至少需要 id、label、degree、program、code、学分要求和课程名称列表。',
+    );
+  }
+  const ids = rawPlans.map((plan) => plan.id);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error('培养方案 id 不能重复，请检查导入文件。');
+  }
+  return rawPlans;
+}
+
 function termIdFromLabel(label: string) {
   const normalized = label
     .trim()
@@ -493,11 +569,17 @@ export default function CourseExplorer({
   const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>(
     'courses',
   );
+  const [customProgramPlans, setCustomProgramPlans] = useState<ProgramPlan[]>(
+    [],
+  );
   const [programPlanId, setProgramPlanId] = useState('optical-master');
+  const [programPlanMessage, setProgramPlanMessage] = useState('');
+  const [programPlanError, setProgramPlanError] = useState('');
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
   const dataFileRef = useRef<HTMLInputElement>(null);
+  const programPlanFileRef = useRef<HTMLInputElement>(null);
   const activeDataset = customDatasets.find(
     (dataset) => dataset.id === activeTermId,
   ) ?? {
@@ -521,6 +603,13 @@ export default function CourseExplorer({
   );
   const selectedIds = selectedByTerm[activeTermId] ?? EMPTY_SELECTED_IDS;
   const selectedIdsRef = useRef(selectedIds);
+  const availableProgramPlans = useMemo(() => {
+    const planMap = new Map<string, ProgramPlan>();
+    [...PROGRAM_PLANS, ...customProgramPlans].forEach((plan) =>
+      planMap.set(plan.id, plan),
+    );
+    return [...planMap.values()];
+  }, [customProgramPlans]);
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
@@ -538,6 +627,9 @@ export default function CourseExplorer({
     );
     const legacySelected = window.localStorage.getItem(
       LEGACY_SELECTED_STORAGE_KEY,
+    );
+    const storedProgramPlans = window.localStorage.getItem(
+      PROGRAM_PLANS_STORAGE_KEY,
     );
 
     let parsedDatasets: CourseDataset[] = [];
@@ -578,6 +670,22 @@ export default function CourseExplorer({
         window.localStorage.removeItem(SELECTED_BY_TERM_STORAGE_KEY);
       }
     }
+
+    let parsedProgramPlans: ProgramPlan[] = [];
+    if (storedProgramPlans) {
+      try {
+        const parsed = JSON.parse(storedProgramPlans);
+        if (
+          Array.isArray(parsed) &&
+          parsed.every(isProgramPlan) &&
+          new Set(parsed.map((plan) => plan.id)).size === parsed.length
+        ) {
+          parsedProgramPlans = parsed;
+        }
+      } catch {
+        window.localStorage.removeItem(PROGRAM_PLANS_STORAGE_KEY);
+      }
+    }
     if (!Object.keys(parsedSelections).length && legacySelected) {
       try {
         const legacyIds = JSON.parse(legacySelected);
@@ -598,6 +706,7 @@ export default function CourseExplorer({
         ? storedActiveTerm
         : DEFAULT_TERM_ID;
     setCustomDatasets(parsedDatasets);
+    setCustomProgramPlans(parsedProgramPlans);
     setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
     setSelectedByTerm(parsedSelections);
     setStorageReady(true);
@@ -619,6 +728,14 @@ export default function CourseExplorer({
       JSON.stringify(selectedByTerm),
     );
   }, [selectedByTerm, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem(
+      PROGRAM_PLANS_STORAGE_KEY,
+      JSON.stringify(customProgramPlans),
+    );
+  }, [customProgramPlans, storageReady]);
 
   const setSelectedIdsForActive = useCallback(
     (next: string[] | ((current: string[]) => string[])) => {
@@ -685,6 +802,38 @@ export default function CourseExplorer({
         error instanceof Error
           ? error.message
           : '课程数据读取失败，请检查文件格式。',
+      );
+    }
+  }
+
+  async function handleProgramPlanImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setProgramPlanError('');
+    setProgramPlanMessage('');
+    try {
+      const plans = parseProgramPlans(await file.text());
+      const importedIds = new Set(plans.map((plan) => plan.id));
+      setCustomProgramPlans((current) => [
+        ...current.filter((plan) => !importedIds.has(plan.id)),
+        ...plans.map((plan) => ({
+          ...plan,
+          updatedAt: plan.updatedAt || new Date().toISOString(),
+        })),
+      ]);
+      if (!availableProgramPlans.some((plan) => plan.id === programPlanId)) {
+        setProgramPlanId(plans[0].id);
+      }
+      setProgramPlanMessage(
+        `已导入 ${plans.length} 个培养方向，已保存在当前浏览器。`,
+      );
+    } catch (error) {
+      setProgramPlanError(
+        error instanceof Error
+          ? error.message
+          : '培养方案读取失败，请检查文件格式。',
       );
     }
   }
@@ -816,7 +965,9 @@ export default function CourseExplorer({
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
   }, [selectedCourses]);
   const activePlan =
-    PROGRAM_PLANS.find((plan) => plan.id === programPlanId) ?? PROGRAM_PLANS[0];
+    availableProgramPlans.find((plan) => plan.id === programPlanId) ??
+    availableProgramPlans[0] ??
+    PROGRAM_PLANS[0];
   const planCoreCourses = useMemo(
     () =>
       initialCourses.filter((course) =>
@@ -1112,7 +1263,7 @@ export default function CourseExplorer({
                   <GraduationCap /> {subjects.length} 个学科/专业
                 </span>
                 <span>
-                  <ClipboardList /> {PROGRAM_PLANS.length} 个培养方向
+                  <ClipboardList /> {availableProgramPlans.length} 个培养方向
                 </span>
                 <span>
                   <Sparkles /> 自动冲突检查
@@ -1207,6 +1358,10 @@ export default function CourseExplorer({
                 <span className="text-xs leading-5 text-slate-500">
                   已选课程按学期独立保存
                 </span>
+                <span className="text-xs leading-5 text-slate-400">
+                  数据版本：
+                  {formatUpdatedAt(activeDataset.updatedAt) || '内置参考数据'}
+                </span>
               </div>
             </div>
             <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
@@ -1225,7 +1380,7 @@ export default function CourseExplorer({
                 <RefreshCw /> 一键更新课程数据
               </Button>
               <span className="text-right text-[0.72rem] leading-5 text-slate-500">
-                选择课程数据 JSON（支持 termId、term/label、courses 字段）
+                选择课程数据 JSON；更新后会自动校验并按课程编码保留已选项
               </span>
             </div>
           </div>
@@ -1656,27 +1811,60 @@ export default function CourseExplorer({
             <div className="section-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p>PROGRAM REQUIREMENTS</p>
-                <h2>物光学院培养方案参考</h2>
+                <h2>培养方案参考</h2>
                 <div className="section-description">
-                  根据《物光学院2026—2027年课程设置》整理，仅显示当前秋季课表中可对应的课程。
+                  {activePlan.source || '根据已整理的培养方案材料'}
+                  整理，仅显示当前课程数据中可对应的课程；可导入其他学院或学科的方案
+                  JSON。
+                  {formatUpdatedAt(activePlan.updatedAt) &&
+                    ` 方案更新时间：${formatUpdatedAt(activePlan.updatedAt)}。`}
                 </div>
               </div>
-              <label className="min-w-64 text-sm font-medium text-slate-600">
-                培养方向
-                <NativeSelect
-                  aria-label="选择培养方向"
-                  className="mt-2 w-full [&>select]:h-11"
-                  onChange={(event) => setProgramPlanId(event.target.value)}
-                  value={programPlanId}
+              <div className="flex min-w-64 flex-col gap-2">
+                <label className="text-sm font-medium text-slate-600">
+                  培养方向
+                  <NativeSelect
+                    aria-label="选择培养方向"
+                    className="mt-2 w-full [&>select]:h-11"
+                    onChange={(event) => setProgramPlanId(event.target.value)}
+                    value={programPlanId}
+                  >
+                    {availableProgramPlans.map((plan) => (
+                      <NativeSelectOption key={plan.id} value={plan.id}>
+                        {plan.label}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+                <input
+                  accept=".json,application/json"
+                  className="sr-only"
+                  onChange={handleProgramPlanImport}
+                  ref={programPlanFileRef}
+                  type="file"
+                />
+                <Button
+                  className="h-10 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  onClick={() => programPlanFileRef.current?.click()}
+                  variant="outline"
                 >
-                  {PROGRAM_PLANS.map((plan) => (
-                    <NativeSelectOption key={plan.id} value={plan.id}>
-                      {plan.label}
-                    </NativeSelectOption>
-                  ))}
-                </NativeSelect>
-              </label>
+                  <RefreshCw /> 导入培养方案 JSON
+                </Button>
+              </div>
             </div>
+
+            {(programPlanMessage || programPlanError) && (
+              <div
+                className={`mb-4 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
+                  programPlanError
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}
+                role={programPlanError ? 'alert' : 'status'}
+              >
+                {programPlanError || programPlanMessage}
+              </div>
+            )}
 
             <div className="program-hero">
               <div>
@@ -1851,7 +2039,7 @@ export default function CourseExplorer({
               <p>ASSESSMENT LOAD</p>
               <h2>考试压力视图</h2>
               <div className="section-description">
-                按秋季课表中的考试方式整理已选课程，帮助你平衡闭卷、报告与实践任务。
+                按课程文件中的考核方式整理已选课程，帮助你识别闭卷、报告、实践等任务的结构分布。
               </div>
             </div>
 
@@ -1924,7 +2112,7 @@ export default function CourseExplorer({
               <FileSpreadsheet />
               <span>
                 考试方式来自 2026
-                年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量。
+                年秋季学期课表；这里仅分析考核类型，不包含考试日期、实际难度或课程作业量，不能替代正式考试安排。
               </span>
             </div>
           </section>

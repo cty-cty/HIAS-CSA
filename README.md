@@ -30,6 +30,7 @@ HIAS-CSA 是面向国科大杭州高等研究院 2026 级研一新生的课程�
 - **清空当前学期选课**：可在右上角汇总卡片中一键清除当前学期的已选课程，不影响其他学期。
 - **一键更新课程数据**：在“当前课程数据学期”区域选择新的课程数据 JSON，即可在浏览器本地加载新学期或修订后的课程表；更新同一学期时会按课程编码尝试保留已选课程，并提示未匹配项目。
 - **按学期隔离选课记录**：不同学期拥有独立的已选课程、学分统计、冲突检查和模拟课表，切换学期不会串课。
+- **可扩展培养方案**：在“培养方案参考”页导入其他学科或专业的培养方案 JSON。导入内容只保存在当前浏览器，不会覆盖内置方案。
 
 ## 本地运行
 
@@ -59,6 +60,37 @@ npm run build:offline
 ```
 
 其中 `courses` 内的课程字段需与 `app/courses.json` 保持一致；如果没有提供 `termId` 或 `label`，网页会根据文件名建立学期名称。
+
+### 导入其他培养方案
+
+在“培养方案参考”页点击“导入培养方案 JSON”，可上传一个方案数组，或上传包含 `plans` 字段的 JSON。每个方案至少需要以下字段：
+
+```json
+{
+  "plans": [
+    {
+      "id": "example-master",
+      "label": "示例方向 · 专硕",
+      "degree": "专业型硕士",
+      "program": "示例专业",
+      "code": "0854 示例代码",
+      "totalCredits": 25,
+      "publicRequiredCredits": 8,
+      "degreeCourseCredits": 12,
+      "professionalNonDegreeCredits": 2,
+      "publicElectiveCredits": 2,
+      "innovationCredits": 1,
+      "coreMinimum": 2,
+      "professionalMinimum": 2,
+      "coreCourses": ["核心课程名称"],
+      "professionalCourses": ["专业课程名称"],
+      "source": "培养方案文件名称或来源说明"
+    }
+  ]
+}
+```
+
+`professionalNonDegreeCredits` 或 `innovationCredits` 不单列时可填 `null`。导入后网页会显示方案来源和更新时间，并按课程名称统计本学期课表中的可匹配课程。
 
 ## 导入 WakeUp 课程表
 

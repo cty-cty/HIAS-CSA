@@ -14,6 +14,8 @@ export type ProgramPlan = {
   professionalMinimum: number;
   coreCourses: string[];
   professionalCourses: string[];
+  source?: string;
+  updatedAt?: string;
   note?: string;
 };
 
