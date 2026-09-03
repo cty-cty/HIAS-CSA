@@ -915,6 +915,63 @@ button {
   margin-top: 0.12rem;
 }
 
+.notice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.notice-card {
+  border: 1px solid #dfe7e3;
+  border-radius: 18px;
+  background: white;
+  padding: 1.05rem;
+  box-shadow: 0 7px 22px rgba(43, 77, 67, 0.04);
+}
+
+.notice-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid #edf1ef;
+  padding-bottom: 0.75rem;
+  color: #2d665a;
+}
+
+.notice-card-title svg {
+  width: 1.05rem;
+}
+
+.notice-card-title h3 {
+  font-size: 0.98rem;
+  font-weight: 750;
+}
+
+.notice-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.notice-item {
+  padding: 0.8rem 0 0.15rem;
+}
+
+.notice-item + .notice-item {
+  border-top: 1px dashed #e5ebe8;
+}
+
+.notice-item strong {
+  color: #405a53;
+  font-size: 0.8rem;
+}
+
+.notice-item p {
+  margin-top: 0.25rem;
+  color: #71807c;
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
 .disclaimer-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1483,10 +1540,18 @@ button {
   .exam-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .notice-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
   .exam-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notice-grid {
     grid-template-columns: 1fr;
   }
 }

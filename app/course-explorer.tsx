@@ -121,6 +121,11 @@ type ExamBucket = {
   tone: string;
 };
 
+type NoticeSection = {
+  title: string;
+  items: Array<{ label: string; detail: string }>;
+};
+
 type WebMcpContext = {
   registerTool: (
     tool: {
@@ -170,6 +175,88 @@ const EXAM_BUCKETS: ExamBucket[] = [
     label: '其他考核',
     description: '以课程文件中的具体说明为准',
     tone: 'slate',
+  },
+];
+const NOTICE_SECTIONS: NoticeSection[] = [
+  {
+    title: '关键时间节点',
+    items: [
+      {
+        label: '网络选课开始',
+        detail: '2026 年 9 月 4 日 12:30',
+      },
+      {
+        label: '选课提交与审核截止',
+        detail:
+          '2026 年 9 月 18 日 12:30；提交后还需完成导师、培养单位和院系审核。',
+      },
+      {
+        label: '增选课程',
+        detail:
+          '课程开课两周内提出申请，并关注各审核角色在提交后 10 天内完成审核。',
+      },
+      {
+        label: '退选课程',
+        detail: '课程学时完成一半前提出申请；超过时限原则上不再受理。',
+      },
+      {
+        label: '学位课属性变更',
+        detail: '课程考核前 10 天提出申请，考核后不能变更。',
+      },
+    ],
+  },
+  {
+    title: '学分与课程认定',
+    items: [
+      {
+        label: '学期选课量',
+        detail:
+          '秋季、春季学期原则上均不少于 10 学分；HIAS 讲堂和科学前沿讲座学分不计入该门槛，夏季学期按需选课。',
+      },
+      {
+        label: '核心课与专业课',
+        detail:
+          '硕士和直博生通常需修读本学科或专业领域至少 2 门核心课 + 2 门专业课作为学位课，具体以个人培养方案为准。',
+      },
+      {
+        label: '非学位课程',
+        detail: '研讨课、实验课、实践课和科学前沿讲座只能作为非学位课修读。',
+      },
+      {
+        label: '专业硕士公选课',
+        detail:
+          '专业型硕士公共选修课至少 3 学分，其中创新创业模块课程 1 学分；程序中的培养方案卡片会分项显示。',
+      },
+      {
+        label: '体育类公选课',
+        detail: '每学期限选 1 门；课程编号第 14 位为 X 的课程属于公共选修课。',
+      },
+    ],
+  },
+  {
+    title: '选课与成绩提醒',
+    items: [
+      {
+        label: '确认前检查',
+        detail:
+          '在导师和培养单位指导下确定学位/非学位属性，提交后及时提醒导师完成审核；未完成提交或审核的选课可能无法进入名单。',
+      },
+      {
+        label: '课程评估',
+        detail:
+          '课程进行到约 2/3 时开始课程评估，授课教师学时完成一半后进行教师评估；未按时评估可能影响成绩查询。',
+      },
+      {
+        label: '考试信息',
+        detail:
+          '考试日期和具体安排以选课系统及学校通知为准；本页的考试压力视图只按课程文件中的考核方式分类。',
+      },
+      {
+        label: '问题咨询',
+        detail:
+          '其它选课问题可咨询杭高院教务处：0571-86088963；选课系统登录问题可咨询网络中心：010-88256622。',
+      },
+    ],
   },
 ];
 const COURSE_COLORS = [
@@ -603,9 +690,9 @@ export default function CourseExplorer({
   const [dataError, setDataError] = useState('');
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
-  const [view, setView] = useState<'courses' | 'guide' | 'exams' | 'timetable'>(
-    'courses',
-  );
+  const [view, setView] = useState<
+    'courses' | 'guide' | 'notice' | 'exams' | 'timetable'
+  >('courses');
   const [customProgramPlans, setCustomProgramPlans] = useState<ProgramPlan[]>(
     [],
   );
@@ -1575,6 +1662,13 @@ export default function CourseExplorer({
                   <ClipboardList /> 培养要求
                 </button>
                 <button
+                  className={`view-tab ${view === 'notice' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('notice')}
+                  type="button"
+                >
+                  <Info /> 选课须知
+                </button>
+                <button
                   className={`view-tab ${view === 'exams' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('exams')}
                   type="button"
@@ -1850,6 +1944,44 @@ export default function CourseExplorer({
                 </Button>
               </div>
             )}
+          </section>
+        ) : view === 'notice' ? (
+          <section className="py-6">
+            <div className="section-heading mb-5">
+              <p>COURSE SELECTION GUIDE</p>
+              <h2>选课须知</h2>
+              <div className="section-description">
+                根据《国科大杭州高等研究院课程学习与选课须知（2026-2027
+                学年）》整理，供模拟选课时快速查阅；正式安排仍以学校通知和选课系统为准。
+              </div>
+            </div>
+
+            <div className="notice-grid">
+              {NOTICE_SECTIONS.map((section) => (
+                <article className="notice-card" key={section.title}>
+                  <div className="notice-card-title">
+                    <Info />
+                    <h3>{section.title}</h3>
+                  </div>
+                  <div className="notice-list">
+                    {section.items.map((item) => (
+                      <div className="notice-item" key={item.label}>
+                        <strong>{item.label}</strong>
+                        <p>{item.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="source-compare-note mt-5">
+              <FileSpreadsheet />
+              <span>
+                本页内容来源于课程须知
+                PDF，重点用于提醒时间节点和通用规则，不会替代个人培养方案。若学院要求更高学分或有特殊规定，应以学院要求为准。
+              </span>
+            </div>
           </section>
         ) : view === 'guide' ? (
           <section className="py-6">
