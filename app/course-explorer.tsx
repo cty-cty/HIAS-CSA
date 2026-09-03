@@ -31,7 +31,6 @@ import {
   Star,
   Target,
   Users,
-  WifiOff,
   X,
   Zap,
 } from 'lucide-react';
@@ -985,9 +984,6 @@ export default function CourseExplorer({
                 </span>
                 <span>
                   <Sparkles /> 自动冲突检查
-                </span>
-                <span>
-                  <WifiOff /> 首次打开后可离线使用
                 </span>
               </div>
             </div>
