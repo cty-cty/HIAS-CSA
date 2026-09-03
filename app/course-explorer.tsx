@@ -275,6 +275,14 @@ function csvCell(value: string | number) {
   return `"${String(value).replaceAll('"', '""')}"`;
 }
 
+function templateWeekText(schedule: Schedule) {
+  return schedule.weeksText
+    .trim()
+    .replace(/^第/, '')
+    .replace(/周$/, '')
+    .replaceAll(',', '、');
+}
+
 function isCourse(value: unknown): value is Course {
   if (!value || typeof value !== 'object') return false;
   const course = value as Partial<Course>;
@@ -901,30 +909,27 @@ export default function CourseExplorer({
 
   function exportSelected() {
     const header = [
-      '课程编码',
       '课程名称',
-      '学分',
-      '教师',
-      '开课院系',
-      '课程类别',
-      '上课安排',
-      '考试方式',
+      '星期',
+      '开始节数',
+      '结束节数',
+      '老师',
+      '地点',
+      '周数',
     ];
-    const rows = selectedCourses.map((course) => [
-      course.code,
-      course.name,
-      formatCredits(course.credits),
-      course.teacher,
-      course.college,
-      course.category,
-      course.schedules
-        .map(
-          (schedule) =>
-            `${schedule.periodText} ${schedule.weeksText} ${schedule.room}`,
-        )
-        .join('；'),
-      course.examMode,
-    ]);
+    const rows = selectedCourses.flatMap((course) =>
+      course.schedules.length
+        ? course.schedules.map((schedule) => [
+            course.name,
+            schedule.dayIndex >= 0 ? schedule.dayIndex + 1 : '',
+            schedule.start || '',
+            schedule.end || '',
+            course.teacher,
+            schedule.room,
+            templateWeekText(schedule),
+          ])
+        : [[course.name, '', '', '', course.teacher, '', '']],
+    );
     const csv = `\ufeff${[header, ...rows]
       .map((row) => row.map(csvCell).join(','))
       .join('\n')}`;
