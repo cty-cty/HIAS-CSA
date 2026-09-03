@@ -1662,13 +1662,6 @@ export default function CourseExplorer({
                   <ClipboardList /> 培养要求
                 </button>
                 <button
-                  className={`view-tab ${view === 'notice' ? 'view-tab-active' : ''}`}
-                  onClick={() => setView('notice')}
-                  type="button"
-                >
-                  <Info /> 选课须知
-                </button>
-                <button
                   className={`view-tab ${view === 'exams' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('exams')}
                   type="button"
@@ -1681,6 +1674,13 @@ export default function CourseExplorer({
                   type="button"
                 >
                   <CalendarDays /> 模拟课表
+                </button>
+                <button
+                  className={`view-tab ${view === 'notice' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('notice')}
+                  type="button"
+                >
+                  <Info /> 选课须知
                 </button>
               </div>
             </div>
