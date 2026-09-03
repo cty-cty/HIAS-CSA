@@ -974,9 +974,8 @@ export default function CourseExplorer({
                 {activeDataset.label}预选课助手
               </h1>
               <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
-                仅面向国科大杭州高等研究院 2026
-                级研一新生，集中查看课程、培养要求与考试方式，把{' '}
-                {initialCourses.length} 门课排成真正适合你的这一周。
+                课程数据依据已整理的 2026 年秋季课表与培养方案材料，仅供参考，
+                用于帮助大家模拟选课、查看冲突与规划学分；最终课程安排请以学校正式通知和选课系统为准。
               </p>
               <div className="hero-meta mt-5">
                 <span>
