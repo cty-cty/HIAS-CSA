@@ -463,6 +463,8 @@ export function classifyCourseRequirement(
 export type CreditSummary = {
   historicalCredits: number;
   plannedCredits: number;
+  /** Planned courses plus approved exemption credits, excluding historical credits. */
+  selectionCredits: number;
   duplicatePlannedCredits: number;
   duplicatePlannedCourseCount: number;
   pendingDesignationCredits: number;
@@ -677,6 +679,7 @@ export function calculateCreditSummary({
   return {
     historicalCredits: sumCredits(completedHistory),
     plannedCredits: sumCredits(countedSelected),
+    selectionCredits: sumCredits(countedSelected) + approvedExemptionCredits,
     duplicatePlannedCredits: sumCredits(duplicateSelected),
     duplicatePlannedCourseCount: duplicateSelected.length,
     pendingDesignationCredits: sumCredits(

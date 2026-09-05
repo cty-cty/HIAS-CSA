@@ -45,6 +45,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Collapsible,
@@ -178,6 +179,7 @@ const PROGRAM_PLANS_STORAGE_KEY = 'hias-program-plans-v1';
 const HISTORICAL_RECORDS_STORAGE_KEY = 'hias-historical-records-v1';
 const ENGLISH_EXEMPTION_STORAGE_KEY = 'hias-english-exemption-v1';
 const ACTIVE_PROGRAM_STORAGE_KEY = 'hias-active-program-v1';
+const INITIAL_SETTINGS_STORAGE_KEY = 'hias-initial-settings-completed-v1';
 const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
 const BACKUP_VERSION = 2;
 const EMPTY_SELECTED_IDS: string[] = [];
@@ -875,6 +877,7 @@ export default function CourseExplorer({
     useState<ExemptionStatus>('normal');
   const [selectionMessage, setSelectionMessage] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [undoSelection, setUndoSelection] = useState<{
@@ -1155,6 +1158,10 @@ export default function CourseExplorer({
     setHistoricalRecords(parsedHistoricalRecords);
     setEnglishExemptionStatus(parsedExemption);
     setStorageReady(true);
+    const needsInitialSetup =
+      window.localStorage.getItem(INITIAL_SETTINGS_STORAGE_KEY) !== '1';
+    setIsInitialSetup(needsInitialSetup);
+    setSettingsOpen(needsInitialSetup);
   }, []);
 
   useEffect(() => {
@@ -1537,7 +1544,7 @@ export default function CourseExplorer({
         !historicalCourseCodes.has(course.code.trim()),
     );
   }, [englishExemptionStatus, historicalRecords, selectedCourses]);
-  const selectedCredits = creditSummary.plannedCredits;
+  const selectedCredits = creditSummary.selectionCredits;
   const selectedCreditBreakdown = useMemo(() => {
     const totals = new Map<string, number>();
     countedSelectedCourses.forEach((course) => {
@@ -1546,8 +1553,14 @@ export default function CourseExplorer({
         (totals.get(course.category) ?? 0) + course.credits,
       );
     });
+    if (englishQualificationCredits > 0) {
+      totals.set(
+        '公共必修课',
+        (totals.get('公共必修课') ?? 0) + englishQualificationCredits,
+      );
+    }
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
-  }, [countedSelectedCourses]);
+  }, [countedSelectedCourses, englishQualificationCredits]);
   const selectedRequirementBreakdown = useMemo(() => {
     const totals = new Map<CourseRequirementType, number>();
     countedSelectedCourses.forEach((course) => {
@@ -1557,8 +1570,19 @@ export default function CourseExplorer({
         (totals.get(requirementType) ?? 0) + course.credits,
       );
     });
+    if (englishQualificationCredits > 0) {
+      totals.set(
+        'publicRequiredDegree',
+        (totals.get('publicRequiredDegree') ?? 0) + englishQualificationCredits,
+      );
+    }
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
-  }, [countedSelectedCourses, activeDesignations, activePlan]);
+  }, [
+    countedSelectedCourses,
+    activeDesignations,
+    activePlan,
+    englishQualificationCredits,
+  ]);
   const planCoreCourses = useMemo(
     () =>
       initialCourses.filter((course) =>
@@ -2504,6 +2528,23 @@ export default function CourseExplorer({
     );
   }
 
+  function completeSettings() {
+    try {
+      window.localStorage.setItem(ACTIVE_PROGRAM_STORAGE_KEY, programPlanId);
+      window.localStorage.setItem(
+        ENGLISH_EXEMPTION_STORAGE_KEY,
+        englishExemptionStatus,
+      );
+      window.localStorage.setItem(INITIAL_SETTINGS_STORAGE_KEY, '1');
+      setIsInitialSetup(false);
+    } catch {
+      setSelectionMessage(
+        '设置已在本次打开期间生效，但浏览器未能保存；下次打开时可能需要重新确认。',
+      );
+    }
+    setSettingsOpen(false);
+  }
+
   const activeFilterChips = [
     ...(query.trim()
       ? [{ label: '搜索：' + query.trim(), clear: () => setQuery('') }]
@@ -2557,10 +2598,27 @@ export default function CourseExplorer({
               type="button"
               className="header-selection"
               onClick={showSelectedCourses}
+              aria-label={`查看已选 ${selectedCourses.length} 门课程，方案合计 ${formatCredits(selectedCredits)} 学分`}
+              title={
+                englishQualificationCredits > 0
+                  ? `查看已选课程，合计含英语免修免考 ${formatCredits(englishQualificationCredits)} 学分`
+                  : '查看已选课程'
+              }
             >
-              <Star />
-              已选 {selectedCourses.length} 门
-              <span>{formatCredits(selectedCredits)} 学分</span>
+              <span className="header-selection-icon" aria-hidden="true">
+                <Star />
+              </span>
+              <span className="header-selection-metric">
+                已选 <strong>{selectedCourses.length}</strong> 门
+              </span>
+              <span className="header-selection-divider" aria-hidden="true" />
+              <span className="header-selection-metric">
+                <strong>{formatCredits(selectedCredits)}</strong> 学分
+              </span>
+              <ArrowRight
+                className="header-selection-arrow"
+                aria-hidden="true"
+              />
             </button>
             <NativeSelect
               id="term-select"
@@ -3365,6 +3423,41 @@ export default function CourseExplorer({
                   <div className="data-management-grid">
                     <article className="data-management-card">
                       <div className="data-management-card-head">
+                        <GraduationCap />
+                        <div>
+                          <h3>导入培养方案</h3>
+                          <p>
+                            添加其他培养方向的方案，导入后可在“培养设置”中选择。
+                          </p>
+                        </div>
+                      </div>
+                      <input
+                        accept=".json,application/json"
+                        className="sr-only"
+                        onChange={handleProgramPlanImport}
+                        ref={programPlanFileRef}
+                        type="file"
+                      />
+                      <Button
+                        className="mt-4 h-10"
+                        variant="outline"
+                        onClick={() => programPlanFileRef.current?.click()}
+                      >
+                        <RefreshCw />
+                        选择培养方案 JSON
+                      </Button>
+                      {(programPlanMessage || programPlanError) && (
+                        <p
+                          className="mt-3 text-sm"
+                          role={programPlanError ? 'alert' : 'status'}
+                        >
+                          {programPlanError || programPlanMessage}
+                        </p>
+                      )}
+                    </article>
+
+                    <article className="data-management-card">
+                      <div className="data-management-card-head">
                         <RefreshCw />
                         <div>
                           <h3>更新课程数据</h3>
@@ -3501,51 +3594,98 @@ export default function CourseExplorer({
                 </section>
               ) : view === 'guide' ? (
                 <section className="guide-page py-6">
-                  <div className="section-heading guide-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                    <div>
-                      <p>PROGRAM REQUIREMENTS</p>
-                      <h2>培养要求</h2>
-                      <div className="section-description">
-                        按培养方向核对已修、预选、分类缺口和待确认事项；最终认定以学校培养方案和正式审核为准。
-                        {formatUpdatedAt(activePlan.updatedAt) &&
-                          ` 方案更新时间：${formatUpdatedAt(activePlan.updatedAt)}。`}
+                  <div className="guide-plan-summary">
+                    <div className="program-summary-header">
+                      <div>
+                        <Badge variant="secondary">{activePlan.degree}</Badge>
+                        <h2>{activePlan.program}</h2>
+                        <p>{activePlan.code}</p>
                       </div>
-                    </div>
-                    <div className="flex min-w-64 flex-col gap-2">
-                      <label className="text-sm font-medium text-slate-600">
-                        培养方向
-                        <NativeSelect
-                          aria-label="选择培养方向"
-                          className="mt-2 w-full [&>select]:h-11"
-                          onChange={(event) =>
-                            setProgramPlanId(event.target.value)
-                          }
-                          value={programPlanId}
-                        >
-                          {availableProgramPlans.map((plan) => (
-                            <NativeSelectOption key={plan.id} value={plan.id}>
-                              {plan.label}
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
-                      </label>
-                      <input
-                        accept=".json,application/json"
-                        className="sr-only"
-                        onChange={handleProgramPlanImport}
-                        ref={programPlanFileRef}
-                        type="file"
-                      />
                       <Button
-                        className="h-10 rounded-xl border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        onClick={() => programPlanFileRef.current?.click()}
                         variant="outline"
+                        onClick={() => setSettingsOpen(true)}
                       >
-                        <RefreshCw /> 导入培养方案 JSON
+                        <Settings2 />
+                        培养设置
                       </Button>
                     </div>
+                    <div className="program-summary-totals">
+                      <div>
+                        <span>毕业总学分要求</span>
+                        <strong>
+                          ≥ {activePlan.totalCredits}
+                          <small>学分</small>
+                        </strong>
+                      </div>
+                      <div>
+                        <span>加入计划后预计累计</span>
+                        <strong>
+                          {formatCredits(creditSummary.estimatedCredits)}
+                          <small>学分</small>
+                        </strong>
+                      </div>
+                      <div>
+                        <span>总学分差额</span>
+                        <strong>
+                          {formatCredits(
+                            Math.max(
+                              0,
+                              activePlan.totalCredits -
+                                creditSummary.estimatedCredits,
+                            ),
+                          )}
+                          <small>学分</small>
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="program-summary-breakdown">
+                      <div>
+                        <span>历史已修</span>
+                        <strong>
+                          {formatCredits(creditSummary.historicalCredits)} 学分
+                        </strong>
+                      </div>
+                      <div>
+                        <span>本学期预选课程</span>
+                        <strong>
+                          {formatCredits(creditSummary.plannedCredits)} 学分
+                        </strong>
+                      </div>
+                      <div>
+                        <span>英语免修免考</span>
+                        <strong>
+                          +{formatCredits(englishQualificationCredits)} 学分
+                        </strong>
+                      </div>
+                      <a href="#guide-pending">
+                        <span>待确认学位属性</span>
+                        <strong>
+                          {unsetDesignationCount} 门 <ArrowRight />
+                        </strong>
+                      </a>
+                    </div>
+                    <div className="program-summary-exemption">
+                      <Info />
+                      <p>
+                        <strong>
+                          英语免修免考：
+                          {englishExemptionStatus === 'approved'
+                            ? '已获得'
+                            : '未获得'}
+                        </strong>
+                        <span>{englishQualificationDetail}</span>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsOpen(true)}
+                      >
+                        修改资格
+                      </button>
+                    </div>
+                    <p className="program-summary-note">
+                      预计累计包含预选课程，毕业仍需分别满足下方分类学分与学位课门数要求，以学校最终审核为准。
+                    </p>
                   </div>
-
                   {(programPlanMessage || programPlanError) && (
                     <div
                       className={`guide-feedback mb-4 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
@@ -3559,47 +3699,136 @@ export default function CourseExplorer({
                     </div>
                   )}
 
-                  <div className="guide-overview requirements-status-grid">
-                    <div className="requirement-status-card">
-                      <span>历史已修且取得</span>
-                      <strong>
-                        {formatCredits(creditSummary.historicalCredits)} 学分
-                      </strong>
-                      <small>只来自历史记录，不与本学期预选重复累计</small>
+                  <div className="guide-progress">
+                    <h3>分类学分要求</h3>
+                    <div className="section-description">
+                      各项显示“当前已计入学分 /
+                      培养方案要求”；“必修”与“学位课”分别判断，待核验项目不会自动判定为已满足。
                     </div>
-                    <div className="requirement-status-card">
-                      <span>本学期预选</span>
-                      <strong>
-                        {formatCredits(creditSummary.plannedCredits)} 学分
-                      </strong>
-                      <small>这是计划量，不称为毕业完成度</small>
-                    </div>
-                    <div className="requirement-status-card">
-                      <span>加入计划后的预计累计</span>
-                      <strong>
-                        {formatCredits(creditSummary.estimatedCredits)} 学分
-                      </strong>
-                      <small>各类别和门数仍需分别核对</small>
-                    </div>
-                    <div className="requirement-status-card">
-                      <span>待确认学位属性</span>
-                      <strong>
-                        {formatCredits(creditSummary.pendingDesignationCredits)}{' '}
-                        学分
-                      </strong>
-                      <small>
-                        {unsetDesignationCount
-                          ? '待确认后计算学位课缺口'
-                          : '当前没有待确认课程'}
-                      </small>
+                    <div className="requirement-grid mt-3">
+                      {[
+                        [
+                          '公共必修学位课',
+                          formatRequirementProgress(
+                            creditSummary.publicRequiredDegreeCredits,
+                            publicRequiredDegreeTarget,
+                          ),
+                        ],
+                        [
+                          '专业学位课',
+                          formatRequirementProgress(
+                            creditSummary.professionalDegreeCredits,
+                            activePlan.degreeCourseCredits,
+                          ),
+                        ],
+                        [
+                          '专业选修课',
+                          formatRequirementProgress(
+                            creditSummary.professionalElectiveCredits,
+                            activePlan.professionalNonDegreeCredits,
+                          ),
+                        ],
+                        [
+                          '公共选修课',
+                          formatRequirementProgress(
+                            creditSummary.publicElectiveCredits,
+                            publicElectiveTarget,
+                          ),
+                        ],
+                        [
+                          '公共必修非学位课',
+                          formatRequirementProgress(
+                            creditSummary.publicRequiredNonDegreeCredits,
+                            publicRequiredNonDegreeTarget,
+                          ),
+                        ],
+                        [
+                          '其中：创新创业课',
+                          formatRequirementProgress(
+                            creditSummary.innovationCredits,
+                            activePlan.innovationCredits,
+                          ),
+                        ],
+                      ].map(([label, value]) => (
+                        <div
+                          className="requirement-item"
+                          key={`progress-${label}`}
+                        >
+                          <span>{label}</span>
+                          <strong>{value}</strong>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
-                  <div className="guide-pending designation-panel mt-5">
+                  <div className="guide-coverage">
+                    <h3>学位课门数要求</h3>
+                    <div className="degree-rule-grid">
+                      {[
+                        {
+                          label: '核心课',
+                          minimum: activePlan.coreMinimum,
+                          counted: selectedDegreeCoreCount,
+                          selected: selectedPlanCoreCount,
+                          available: planCoreCourses.length,
+                        },
+                        {
+                          label: '专业课',
+                          minimum: activePlan.professionalMinimum,
+                          counted: selectedDegreeProfessionalCount,
+                          selected: selectedPlanProfessionalCount,
+                          available: planProfessionalCourses.length,
+                        },
+                      ].map((rule) => (
+                        <article className="degree-rule-card" key={rule.label}>
+                          <div className="degree-rule-heading">
+                            <h4>
+                              <Target />
+                              {rule.label}
+                            </h4>
+                            <span
+                              className={
+                                rule.counted >= rule.minimum ? 'rule-met' : ''
+                              }
+                            >
+                              {rule.counted >= rule.minimum
+                                ? '门数已满足'
+                                : '尚差 ' +
+                                  (rule.minimum - rule.counted) +
+                                  ' 门'}
+                            </span>
+                          </div>
+                          <p className="degree-rule-minimum">
+                            至少 <strong>{rule.minimum}</strong> 门
+                            <span>作为学位课</span>
+                          </p>
+                          <div className="degree-rule-status">
+                            <span>
+                              当前计入 <b>{rule.counted}</b> 门
+                            </span>
+                            <span>要求 ≥ {rule.minimum} 门</span>
+                          </div>
+                          <p className="degree-rule-context">
+                            本学期已选 {rule.selected} 门 · 本学期课程库{' '}
+                            {rule.available} 门可选
+                          </p>
+                        </article>
+                      ))}
+                    </div>
+                    <p className="degree-rule-note">
+                      门数按已修记录与当前方案中符合要求的学位课统计，待确认属性的课程暂不计入。
+                      <a href="#guide-pending">
+                        确认课程属性 <ArrowRight />
+                      </a>
+                    </p>
+                  </div>
+                  <div
+                    id="guide-pending"
+                    className="guide-pending designation-panel"
+                  >
                     <div className="designation-panel-head">
                       <div>
-                        <p>FIRST CONFIRM COURSES</p>
-                        <h3>先确认已选课程属性</h3>
+                        <h3>确认已选课程的学位属性</h3>
                         <span>
                           这是个人规划口径，不代表学校审核认定；待确认课程不会被当成完全缺课。
                         </span>
@@ -3690,42 +3919,16 @@ export default function CourseExplorer({
                     )}
                   </div>
 
-                  <div className="guide-records history-exemption-grid mt-5">
+                  {activePlan.note && (
+                    <div className="guide-note program-note mt-4">
+                      <Info /> {activePlan.note}
+                    </div>
+                  )}
+
+                  <div className="guide-records history-exemption-grid">
                     <article className="history-card">
                       <div className="designation-panel-head">
                         <div>
-                          <p>ENGLISH EXEMPTION</p>
-                          <h3>英语免修免考资格</h3>
-                        </div>
-                        <Badge
-                          className={`english-status-badge english-status-badge-${englishStatusTone(englishExemptionStatus)}`}
-                          variant="secondary"
-                        >
-                          {englishStatusLabel(englishExemptionStatus)}
-                        </Badge>
-                      </div>
-                      <div className="english-guide-summary">
-                        <span>
-                          只需确认是否已获得免修免考资格；开关已移到页面顶部
-                        </span>
-                        <span>
-                          当前：{englishStatusLabel(englishExemptionStatus)}
-                        </span>
-                      </div>
-                      <p className="history-card-note">
-                        英语免修免考资格获得后按 3
-                        学分计入公共必修学位课；未获得时不计入。切换状态不会静默删除已选英语课程，若历史中已有同一英语课程也不会重复计分；最终以学校审核为准。
-                      </p>
-                      {selectedCourses.some(isEnglishCourse) && (
-                        <p className="history-card-warning">
-                          当前预选中保留了英语课程：切换免修状态不会静默删除它。
-                        </p>
-                      )}
-                    </article>
-                    <article className="history-card">
-                      <div className="designation-panel-head">
-                        <div>
-                          <p>HISTORICAL RECORDS</p>
                           <h3>历史已修记录</h3>
                         </div>
                         <Badge variant="secondary">
@@ -3888,7 +4091,6 @@ export default function CourseExplorer({
                     <article className="history-card">
                       <div className="designation-panel-head">
                         <div>
-                          <p>HIAS LECTURES</p>
                           <h3>HIAS讲堂学分</h3>
                         </div>
                         <Badge variant="secondary">专业非学位课</Badge>
@@ -3942,150 +4144,6 @@ export default function CourseExplorer({
                       </p>
                     </article>
                   </div>
-
-                  <div className="guide-plan-summary program-hero">
-                    <div>
-                      <span>{activePlan.degree}</span>
-                      <h3>{activePlan.program}</h3>
-                      <p>{activePlan.code}</p>
-                    </div>
-                    <div className="program-credit-total">
-                      <strong>≥{activePlan.totalCredits}</strong>
-                      <span>毕业总学分</span>
-                    </div>
-                    <div className="program-selected-total">
-                      <strong>
-                        {formatCredits(creditSummary.estimatedCredits)}
-                      </strong>
-                      <span>加入计划后的预计累计</span>
-                    </div>
-                  </div>
-
-                  <div className="guide-progress mt-5">
-                    <div className="section-description">
-                      各项显示“当前已计入学分 /
-                      培养方案要求”；“必修”与“学位课”分别判断，待核验项目不会自动判定为已满足。
-                    </div>
-                    <div
-                      className={`english-requirement-callout english-status-banner-${englishStatusTone(englishExemptionStatus)}`}
-                      role="status"
-                    >
-                      <div>
-                        <span>英语免修免考对培养要求的影响</span>
-                        <strong>
-                          {englishExemptionStatus === 'approved'
-                            ? `已获得 · +${formatCredits(englishQualificationCredits)} 学分`
-                            : '未获得 · 0 学分'}
-                        </strong>
-                      </div>
-                      <small>{englishQualificationDetail}</small>
-                    </div>
-                    <div className="requirement-grid mt-3">
-                      {[
-                        [
-                          '公共必修学位课',
-                          formatRequirementProgress(
-                            creditSummary.publicRequiredDegreeCredits,
-                            publicRequiredDegreeTarget,
-                          ),
-                        ],
-                        [
-                          '专业学位课',
-                          formatRequirementProgress(
-                            creditSummary.professionalDegreeCredits,
-                            activePlan.degreeCourseCredits,
-                          ),
-                        ],
-                        [
-                          '专业选修课',
-                          formatRequirementProgress(
-                            creditSummary.professionalElectiveCredits,
-                            activePlan.professionalNonDegreeCredits,
-                          ),
-                        ],
-                        [
-                          '公共选修课',
-                          formatRequirementProgress(
-                            creditSummary.publicElectiveCredits,
-                            publicElectiveTarget,
-                          ),
-                        ],
-                        [
-                          '公共必修非学位课',
-                          formatRequirementProgress(
-                            creditSummary.publicRequiredNonDegreeCredits,
-                            publicRequiredNonDegreeTarget,
-                          ),
-                        ],
-                        [
-                          '其中：创新创业课',
-                          formatRequirementProgress(
-                            creditSummary.innovationCredits,
-                            activePlan.innovationCredits,
-                          ),
-                        ],
-                      ].map(([label, value]) => (
-                        <div
-                          className="requirement-item"
-                          key={`progress-${label}`}
-                        >
-                          <span>{label}</span>
-                          <strong>{value}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="guide-coverage selection-rules mt-4">
-                    <div className="rule-card">
-                      <Target />
-                      <div>
-                        <span>本学期核心课覆盖</span>
-                        <strong>
-                          已选 {selectedPlanCoreCount} / 可选{' '}
-                          {planCoreCourses.length} 门
-                        </strong>
-                        <p>
-                          培养方案要求：至少 {activePlan.coreMinimum}{' '}
-                          门作为学位课
-                        </p>
-                      </div>
-                      <b>
-                        {selectedPlanCoreCount}/{planCoreCourses.length}
-                      </b>
-                    </div>
-                    <div className="rule-card">
-                      <Target />
-                      <div>
-                        <span>本学期专业课覆盖</span>
-                        <strong>
-                          已选 {selectedPlanProfessionalCount} / 可选{' '}
-                          {planProfessionalCourses.length} 门
-                        </strong>
-                        <p>
-                          培养方案要求：至少 {activePlan.professionalMinimum}{' '}
-                          门作为学位课
-                        </p>
-                      </div>
-                      <b>
-                        {selectedPlanProfessionalCount}/
-                        {planProfessionalCourses.length}
-                      </b>
-                    </div>
-                  </div>
-
-                  <div className="guide-note coverage-note mt-4">
-                    <Info />
-                    <span>
-                      这里统计的是本学期已选课程对培养方案课程库的覆盖情况，不代表课程已经被认定为学位课，也不等同于毕业完成度。
-                    </span>
-                  </div>
-
-                  {activePlan.note && (
-                    <div className="guide-note program-note mt-4">
-                      <Info /> {activePlan.note}
-                    </div>
-                  )}
 
                   <div className="guide-course-library mt-7 grid gap-5 xl:grid-cols-2">
                     {programCourseGroups.map(({ title, courses, kind }) => (
@@ -4271,8 +4329,10 @@ export default function CourseExplorer({
                       <p>WEEKLY TIMETABLE</p>
                       <h2>我的模拟课程表</h2>
                       <div className="section-description">
-                        共 {selectedCourses.length} 门课程 ·{' '}
+                        共 {selectedCourses.length} 门课程 · 方案合计{' '}
                         {formatCredits(selectedCredits)} 学分
+                        {englishQualificationCredits > 0 &&
+                          `（含英语免修免考 ${formatCredits(englishQualificationCredits)} 学分）`}
                       </div>
                     </div>
                     <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
@@ -4407,7 +4467,7 @@ export default function CourseExplorer({
                 <div className="selection-numbers">
                   <div>
                     <strong>{formatCredits(selectedCredits)}</strong>
-                    <span>预选学分</span>
+                    <span>方案学分合计</span>
                   </div>
                   <button type="button" onClick={showSelectedCourses}>
                     <strong>{selectedCourses.length}</strong>
@@ -4416,6 +4476,13 @@ export default function CourseExplorer({
                     </span>
                   </button>
                 </div>
+                {englishQualificationCredits > 0 && (
+                  <p className="selection-exemption-note">
+                    <CheckCircle2 />
+                    已含英语免修免考 +
+                    {formatCredits(englishQualificationCredits)} 学分
+                  </p>
+                )}
                 <button
                   type="button"
                   className={
@@ -4637,9 +4704,13 @@ export default function CourseExplorer({
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="settings-dialog">
           <DialogHeader>
-            <DialogTitle>培养设置</DialogTitle>
+            <DialogTitle>
+              {isInitialSetup ? '先确认你的培养设置' : '培养设置'}
+            </DialogTitle>
             <DialogDescription>
-              培养方向决定课程归属和学分要求，请选择自己的方案。
+              {isInitialSetup
+                ? '请选择培养方向，并确认是否已获得英语免修免考资格。完成后即可开始选课。'
+                : '培养方向决定课程归属和学分要求，请选择自己的方案。'}
             </DialogDescription>
           </DialogHeader>
           <label className="settings-field">
@@ -4656,18 +4727,33 @@ export default function CourseExplorer({
               ))}
             </NativeSelect>
           </label>
-          <label className="settings-english">
-            <input
-              type="checkbox"
-              checked={englishExemptionStatus === 'approved'}
-              onChange={(event) =>
-                setEnglishStatus(event.target.checked ? 'approved' : 'normal')
+          <fieldset className="settings-qualification">
+            <legend id="settings-qualification-label">
+              是否已获得英语免修免考资格？
+            </legend>
+            <RadioGroup
+              aria-labelledby="settings-qualification-label"
+              value={
+                englishExemptionStatus === 'approved' ? 'approved' : 'normal'
               }
-            />
-            <span>
-              已获得英语免修免考资格<small>请按学校审核结果勾选</small>
-            </span>
-          </label>
+              onValueChange={(value) =>
+                setEnglishStatus(value === 'approved' ? 'approved' : 'normal')
+              }
+            >
+              <label className="settings-qualification-option">
+                <RadioGroupItem value="normal" />
+                <span>
+                  未获得<small>未申请、待审核或未通过审核</small>
+                </span>
+              </label>
+              <label className="settings-qualification-option">
+                <RadioGroupItem value="approved" />
+                <span>
+                  已获得<small>学校已审核通过免修免考资格</small>
+                </span>
+              </label>
+            </RadioGroup>
+          </fieldset>
           <p className="settings-explanation">
             {englishQualificationDetail}
             {englishExemptionStatus === 'approved' &&
@@ -4677,7 +4763,9 @@ export default function CourseExplorer({
           </p>
           <p className="settings-explanation">{heroDescription}</p>
           <DialogFooter>
-            <Button onClick={() => setSettingsOpen(false)}>完成</Button>
+            <Button onClick={completeSettings} disabled={!storageReady}>
+              {isInitialSetup ? '完成设置，开始选课' : '完成'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

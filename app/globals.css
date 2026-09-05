@@ -1704,93 +1704,26 @@ button {
 .guide-page {
   display: flex;
   flex-direction: column;
+  gap: 1.25rem;
 }
-
-.guide-page > .guide-heading {
-  order: 1;
+.guide-page > * {
+  min-width: 0;
+  margin-top: 0;
 }
-
-.guide-page > .guide-feedback {
-  order: 2;
-}
-
-.guide-page > .guide-overview {
-  order: 3;
-}
-
-.guide-page > .guide-pending {
-  order: 4;
-}
-
-.guide-page > .guide-plan-summary {
-  order: 5;
-}
-
-.guide-page > .guide-progress {
-  order: 6;
-}
-
-.guide-page > .guide-coverage {
-  order: 7;
-}
-
-.guide-page > .guide-note {
-  order: 8;
-}
-
-.guide-page > .guide-records {
-  order: 9;
-}
-
-.guide-page > .guide-course-library {
-}
-
-.guide-page > .guide-source {
-  order: 12;
-}
-
-.guide-plan-summary {
-  margin-top: 1.25rem;
-}
-
-.guide-progress {
-  border-top: 1px solid #e6eee9;
-  padding-top: 1.1rem;
-}
-
-.guide-progress > .section-description {
-  color: #60736c;
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-
-.guide-records,
-.guide-course-library,
-.guide-source {
-  position: relative;
-}
-
-.guide-records::before,
-.guide-course-library::before {
-  display: block;
-  margin: 0 0 0.65rem;
-  color: #84958e;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
 .guide-records::before {
-  content: '记录与免修';
+  content: '已修记录';
   grid-column: 1 / -1;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #172b46;
 }
-
 .guide-course-library::before {
   content: '培养方案课程库';
   grid-column: 1 / -1;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #172b46;
 }
-
 .requirement-status-card,
 .history-card,
 .recommendation-panel,
@@ -3027,6 +2960,20 @@ button {
 .selection-numbers svg {
   width: 0.8rem;
 }
+
+.selection-exemption-note {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.25rem 0 0.8rem;
+  color: #356c60;
+  font-size: 0.8125rem;
+}
+
+.selection-exemption-note svg {
+  width: 1rem;
+  flex-shrink: 0;
+}
 .selection-health {
   display: flex;
   width: 100%;
@@ -3338,6 +3285,36 @@ button {
   line-height: 1.7;
   color: #61718a;
 }
+
+.settings-qualification legend {
+  margin-bottom: 0.65rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-qualification-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.75rem;
+  padding: 0.75rem;
+  border: 1px solid #dce3ed;
+  border-radius: 0.6rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.settings-qualification-option:has([data-checked]) {
+  border-color: #7f9fc9;
+  background: #edf2fa;
+}
+
+.settings-qualification-option small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
 [data-slot='dialog-content'],
 [data-slot='alert-dialog-content'] {
   max-height: calc(100dvh - 2rem);
@@ -3547,19 +3524,61 @@ button {
   }
 }
 .header-selection {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
   min-height: 2.75rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #d4dfed;
+  border-radius: 0.65rem;
   font-size: 0.875rem;
+  line-height: 1;
+  white-space: nowrap;
   color: #234c89;
+  box-shadow: 0 1px 2px #17315c04;
+  transition:
+    border-color 150ms,
+    background-color 150ms;
+}
+.header-context > .header-selection:hover {
+  border-color: #8ba9d0;
+  background: #edf2fa;
 }
 .header-selection svg {
   width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
 }
-.header-selection span {
-  color: #64748b;
+.header-selection-icon {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+  background: #edf2fa;
+}
+.header-selection-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  color: #596e89;
+}
+.header-selection-metric strong {
+  color: #234c89;
+  font-size: 1.125rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.header-selection-divider {
+  width: 1px;
+  height: 1.15rem;
+  background: #dce3ed;
+}
+.header-selection .header-selection-arrow {
+  width: 0.875rem;
+  color: #8294ad;
 }
 @media (max-width: 1100px) {
   .header-selection {
@@ -3580,4 +3599,342 @@ button {
 .selection-toast > output {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Programme requirements follow the same blue-and-white workspace hierarchy. */
+.guide-plan-summary {
+  border: 1px solid #dce3ed;
+  border-radius: 0.85rem;
+  background: white;
+  overflow: hidden;
+}
+.program-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.2rem 1.4rem;
+  border-bottom: 1px solid #e8edf4;
+}
+.program-summary-header h2 {
+  margin-top: 0.45rem;
+  font-size: 1.4rem;
+  font-weight: 750;
+  color: #172b46;
+}
+.program-summary-header p {
+  margin-top: 0.2rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+.program-summary-header button {
+  min-height: 2.75rem;
+}
+.program-summary-totals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 1.4rem;
+  gap: 1.5rem;
+  background: #f8faff;
+}
+.program-summary-totals > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.program-summary-totals > div + div {
+  border-left: 1px solid #dce3ed;
+  padding-left: 1.5rem;
+}
+.program-summary-totals span {
+  color: #526781;
+  font-size: 0.875rem;
+}
+.program-summary-totals strong {
+  color: #234c89;
+  font-size: 2rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.program-summary-totals small {
+  margin-left: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #657994;
+}
+.program-summary-breakdown {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1.1rem 1.4rem;
+  border-top: 1px solid #e8edf4;
+}
+.program-summary-breakdown > * {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.program-summary-breakdown span {
+  color: #64748b;
+  font-size: 0.8125rem;
+}
+.program-summary-breakdown strong {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #234c89;
+  font-size: 1rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.program-summary-breakdown svg {
+  width: 1rem;
+}
+.program-summary-breakdown a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+.program-summary-exemption {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1.4rem;
+  border-top: 1px solid #e8edf4;
+  background: #f8faff;
+  color: #526781;
+}
+.program-summary-exemption > svg {
+  width: 1.1rem;
+  flex-shrink: 0;
+}
+.program-summary-exemption p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.3rem 0.75rem;
+  flex: 1;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.program-summary-exemption strong {
+  color: #345d86;
+  font-weight: 650;
+}
+.program-summary-exemption button {
+  flex-shrink: 0;
+  min-height: 2.75rem;
+  color: #234c89;
+  font-size: 0.875rem;
+}
+.program-summary-note {
+  padding: 0.75rem 1.4rem;
+  color: #6b7b91;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+.guide-progress,
+.guide-coverage {
+  min-width: 0;
+}
+.guide-progress > h3,
+.guide-coverage > h3 {
+  color: #172b46;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+.guide-progress > .section-description {
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+.guide-progress .requirement-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.guide-progress .requirement-item {
+  border-color: #dce3ed;
+  border-radius: 0.7rem;
+  background: white;
+  padding: 1rem;
+}
+.guide-progress .requirement-item span {
+  color: #60728b;
+  font-size: 0.875rem;
+}
+.guide-progress .requirement-item strong {
+  color: #234c89;
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+.degree-rule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+.degree-rule-card {
+  border: 1px solid #cddbee;
+  border-radius: 0.85rem;
+  background: white;
+  padding: 1.2rem;
+}
+.degree-rule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+.degree-rule-heading h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #234c89;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.degree-rule-heading svg {
+  width: 1.1rem;
+}
+.degree-rule-heading > span {
+  border-radius: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  background: #fff4e5;
+  color: #8e5826;
+  font-size: 0.8125rem;
+}
+.degree-rule-heading > .rule-met {
+  background: #edf5f3;
+  color: #356c60;
+}
+.degree-rule-minimum {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 1rem;
+  padding: 0.8rem 1rem;
+  border-radius: 0.6rem;
+  background: #edf2fa;
+  color: #234c89;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.degree-rule-minimum strong {
+  font-size: 2rem;
+  font-weight: 750;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.degree-rule-minimum span {
+  margin-left: auto;
+  font-size: 0.875rem;
+}
+.degree-rule-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #526781;
+}
+.degree-rule-status b {
+  color: #234c89;
+  font-size: 1rem;
+}
+.degree-rule-context {
+  margin-top: 0.65rem;
+  color: #6b7b91;
+  font-size: 0.8125rem;
+}
+.degree-rule-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  color: #60728b;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.degree-rule-note a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+  color: #234c89;
+}
+.degree-rule-note svg {
+  width: 1rem;
+}
+#guide-pending {
+  scroll-margin-top: 5rem;
+}
+.guide-page .designation-panel,
+.guide-page .history-card,
+.guide-page .program-course-group {
+  border-color: #dce3ed;
+  border-radius: 0.85rem;
+  box-shadow: none;
+}
+.guide-page .designation-panel-head h3,
+.guide-page .program-course-group-title h3 {
+  color: #172b46;
+}
+.guide-page .history-card {
+  min-width: 0;
+  padding: 1.2rem;
+}
+.guide-page .history-card-note {
+  font-size: 0.875rem;
+  color: #60728b;
+}
+.guide-records {
+  align-items: start;
+}
+.guide-page .program-select-active {
+  color: #234c89;
+  background: #edf2fa;
+  border-color: #a9bfdc;
+}
+@media (max-width: 700px) {
+  .program-summary-header {
+    padding: 1rem;
+  }
+  .program-summary-header h2 {
+    font-size: 1.2rem;
+  }
+  .program-summary-totals {
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+  .program-summary-totals > div + div {
+    padding-left: 0.75rem;
+  }
+  .program-summary-totals strong {
+    font-size: 1.6rem;
+  }
+  .program-summary-totals small {
+    display: block;
+    margin: 0.3rem 0 0;
+    font-size: 0.8125rem;
+  }
+  .program-summary-breakdown {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 1rem;
+  }
+  .program-summary-exemption {
+    padding: 0.7rem 1rem;
+  }
+  .program-summary-note {
+    padding: 0.7rem 1rem;
+  }
+  .guide-progress .requirement-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .degree-rule-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
