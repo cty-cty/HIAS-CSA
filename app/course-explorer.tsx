@@ -52,7 +52,40 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { PROGRAM_PLANS, type ProgramPlan } from '@/app/program-plans';
+import {
+  calculateCreditSummary,
+  courseFamilyKey,
+  getDegreeEligibility,
+  getCourseRequirementType,
+  getCourseRequirementTypeLabel,
+  getCourseRoleEligibility,
+  getCourseDesignation,
+  getCourseCodeCategory,
+  getCourseCodeCategoryLabel,
+  getCourseCodeMarker,
+  getPlanCourseCounts,
+  isEnglishCourse,
+  isInnovationCourse,
+  isNonDegreeOnly,
+  getCourseModule,
+  type CourseDesignation,
+  type CourseModule,
+  type CourseRequirementType,
+  type DegreeRole,
+  type ExemptionStatus,
+  type HistoricalModule,
+  type HistoricalRecord,
+} from '@/app/credit-model';
+import { getGraduateProgramScopeLabel } from '@/app/graduate-program-mapping';
 
 type Schedule = {
   day: string;
@@ -82,26 +115,67 @@ type Course = {
   examMode: string;
   teacher: string;
   schedules: Schedule[];
+  module?: CourseModule;
+  requirementType?: CourseRequirementType;
+  degreeRole?: DegreeRole;
 };
 
 type CourseDataset = {
   id: string;
   label: string;
+  shortLabel?: string;
   courses: Course[];
   updatedAt?: string;
   audience?: string;
 };
 
 const DEFAULT_TERM_ID = '2026-fall';
-const DEFAULT_TERM_LABEL = '2026 秋季';
+const DEFAULT_TERM_LABEL = '2026—2027学年(秋)第一学期';
+const TERM_TEMPLATES = [
+  {
+    id: DEFAULT_TERM_ID,
+    label: DEFAULT_TERM_LABEL,
+    shortLabel: '26—27 秋季',
+  },
+  {
+    id: '2027-spring',
+    label: '2026—2027学年(春)第二学期',
+    shortLabel: '26—27 春季',
+  },
+  {
+    id: '2027-summer',
+    label: '2026—2027学年(夏)第三学期',
+    shortLabel: '26—27 夏季',
+  },
+] as const;
+const TERM_TEMPLATE_IDS = new Set<string>(TERM_TEMPLATES.map((term) => term.id));
 const COURSE_DATASETS_STORAGE_KEY = 'hias-course-datasets-v1';
 const ACTIVE_TERM_STORAGE_KEY = 'hias-active-term-v1';
 const SELECTED_BY_TERM_STORAGE_KEY = 'hias-selected-by-term-v1';
 const DESIGNATIONS_BY_TERM_STORAGE_KEY = 'hias-designations-by-term-v1';
 const PROGRAM_PLANS_STORAGE_KEY = 'hias-program-plans-v1';
+const HISTORICAL_RECORDS_STORAGE_KEY = 'hias-historical-records-v1';
+const ENGLISH_EXEMPTION_STORAGE_KEY = 'hias-english-exemption-v1';
 const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
+const BACKUP_VERSION = 2;
 const EMPTY_SELECTED_IDS: string[] = [];
 const EMPTY_DESIGNATIONS: Record<string, CourseDesignation> = {};
+
+function createTermTemplateDataset(
+  termId: string,
+  defaultCourses: Course[],
+): CourseDataset | null {
+  const template = TERM_TEMPLATES.find((term) => term.id === termId);
+  if (!template) return null;
+  return {
+    id: template.id,
+    label: template.label,
+    shortLabel: template.shortLabel,
+    courses: template.id === DEFAULT_TERM_ID ? defaultCourses : [],
+    updatedAt: '',
+    audience: '2026 级研一新生专用',
+  };
+}
 
 type ConflictSlot = {
   day: string;
@@ -130,8 +204,6 @@ type NoticeSection = {
   items: Array<{ label: string; detail: string }>;
 };
 
-type CourseDesignation = 'degree' | 'non-degree' | 'unset';
-
 type CheckupItem = {
   id: string;
   title: string;
@@ -155,6 +227,19 @@ type WebMcpContext = {
     },
     options: { signal: AbortSignal },
   ) => void | Promise<void>;
+};
+
+type BackupPayload = {
+  version: number;
+  app: 'HIAS-CSA';
+  savedAt: string;
+  activeTermId: string;
+  customDatasets: CourseDataset[];
+  selectedByTerm: Record<string, string[]>;
+  designationsByTerm: Record<string, Record<string, CourseDesignation>>;
+  programPlans: ProgramPlan[];
+  historicalRecords: HistoricalRecord[];
+  englishExemptionStatus: ExemptionStatus;
 };
 
 const DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -230,11 +315,12 @@ const NOTICE_SECTIONS: NoticeSection[] = [
       {
         label: '核心课与专业课',
         detail:
-          '硕士和直博生通常需修读本学科或专业领域至少 2 门核心课 + 2 门专业课作为学位课，具体以个人培养方案为准。',
+          '硕士和直博生至少选择 2 门核心课（编号第14位为 1 或 2）和 2 门专业课（编号第14位为 3）作为学位课，具体以个人培养方案为准。',
       },
       {
         label: '非学位课程',
-        detail: '研讨课、实验课、实践课和科学前沿讲座只能作为非学位课修读。',
+        detail:
+          '课程编号第14位为 4、5、6、7 的研讨、实验、实践、科学前沿讲座，以及人文系列讲座（HIAS讲堂），只能作为非学位课修读。编号第14位为 B/X 的公共课程也不计入专业学位课。',
       },
       {
         label: '专业硕士公选课',
@@ -273,34 +359,6 @@ const NOTICE_SECTIONS: NoticeSection[] = [
     ],
   },
 ];
-const NON_DEGREE_ONLY_CATEGORIES = new Set([
-  '研讨课',
-  '实验课',
-  '实践课',
-  '科学前沿讲座',
-]);
-const INNOVATION_COURSE_NAMES = new Set([
-  '创业管理',
-  '创业启程',
-  '生物医药数字科创的未来',
-  '创新型个性发展心理学',
-  '创新创业实践及案例研究',
-  '创业融资入门',
-  '科技成果转移转化探究与实践',
-  '科技创新及方法',
-  '品牌与营销管理',
-  '创新创业训练营',
-  '技术发展与产品创新管理',
-  '军工航天领域的商业模式和案例',
-  '人工智能产品技术创新及应用案例',
-  '创造性思维',
-  '思维创新与设计',
-  '技术创业',
-  '科创产业前沿与人才科技政策体系',
-  '前沿科技融合与创新发展',
-  '技术创新创业投资与资本运作',
-  '科技创业领导力',
-]);
 const COURSE_COLORS = [
   ['#dff2ee', '#147d6f'],
   ['#e9e5fb', '#6251a4'],
@@ -309,13 +367,6 @@ const COURSE_COLORS = [
   ['#f8edca', '#91701e'],
   ['#f3dfe9', '#9c4b72'],
 ];
-
-function isNonDegreeOnly(course: Course) {
-  return (
-    NON_DEGREE_ONLY_CATEGORIES.has(course.category) ||
-    /科学前沿讲座|HIAS讲堂|人文系列讲座/.test(course.name)
-  );
-}
 
 function countsTowardSemesterMinimum(course: Course) {
   return !/科学前沿讲座|HIAS讲堂|人文系列讲座/.test(
@@ -327,6 +378,16 @@ function designationLabel(value: CourseDesignation) {
   if (value === 'degree') return '学位课';
   if (value === 'non-degree') return '非学位课';
   return '未确定';
+}
+
+function englishStatusLabel(value: ExemptionStatus) {
+  return value === 'approved'
+    ? '已获得英语免修免考资格'
+    : '未获得英语免修免考资格';
+}
+
+function englishStatusTone(value: ExemptionStatus) {
+  return value === 'approved' ? 'approved' : 'not-qualified';
 }
 
 function intersects<T>(left: T[], right: T[]) {
@@ -347,10 +408,6 @@ function coursesConflict(left: Course, right: Course) {
   return left.schedules.some((a) =>
     right.schedules.some((b) => schedulesConflict(a, b)),
   );
-}
-
-function courseBaseName(name: string) {
-  return name.replace(/[-—－]?\d+班$/, '');
 }
 
 function getExamBucket(examMode: string): ExamBucketId {
@@ -420,6 +477,15 @@ function formatConflictSlot(slot: ConflictSlot) {
 
 function formatCredits(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatRequirementProgress(
+  actual: number,
+  target: number | null | undefined,
+) {
+  return target === null || target === undefined
+    ? `${formatCredits(actual)} 学分 / 待核验`
+    : `${formatCredits(actual)} / ${formatCredits(target)} 学分`;
 }
 
 function formatEnrollment(course: Course) {
@@ -591,6 +657,8 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
   const creditFields = [
     plan.totalCredits,
     plan.publicRequiredCredits,
+    plan.publicRequiredDegreeCredits,
+    plan.publicRequiredNonDegreeCredits,
     plan.degreeCourseCredits,
     plan.professionalNonDegreeCredits,
     plan.publicElectiveCredits,
@@ -601,10 +669,17 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
   return (
     textFields.every((value) => typeof value === 'string' && value.trim()) &&
     creditFields.every(
-      (value) => value === null || isNonNegativeNumber(value),
+      (value) =>
+        value === undefined || value === null || isNonNegativeNumber(value),
     ) &&
     (plan.publicRequiredCredits === null ||
       isNonNegativeNumber(plan.publicRequiredCredits)) &&
+    (plan.publicRequiredDegreeCredits === undefined ||
+      plan.publicRequiredDegreeCredits === null ||
+      isNonNegativeNumber(plan.publicRequiredDegreeCredits)) &&
+    (plan.publicRequiredNonDegreeCredits === undefined ||
+      plan.publicRequiredNonDegreeCredits === null ||
+      isNonNegativeNumber(plan.publicRequiredNonDegreeCredits)) &&
     (plan.professionalNonDegreeCredits === null ||
       isNonNegativeNumber(plan.professionalNonDegreeCredits)) &&
     (plan.innovationCredits === null ||
@@ -622,6 +697,12 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
     (plan.source === undefined || typeof plan.source === 'string') &&
     (plan.updatedAt === undefined || typeof plan.updatedAt === 'string') &&
     (plan.note === undefined || typeof plan.note === 'string')
+    &&
+    (plan.requiredPublicRequiredNonDegreeCourses === undefined ||
+      (Array.isArray(plan.requiredPublicRequiredNonDegreeCourses) &&
+        plan.requiredPublicRequiredNonDegreeCourses.every(
+          (course) => typeof course === 'string' && course.trim(),
+        )))
   );
 }
 
@@ -755,8 +836,14 @@ export default function CourseExplorer({
   const [onlySelected, setOnlySelected] = useState(false);
   const [onlyNoConflict, setOnlyNoConflict] = useState(false);
   const [view, setView] = useState<
-    'courses' | 'checkup' | 'guide' | 'notice' | 'exams' | 'timetable'
-  >('courses');
+    | 'courses'
+    | 'checkup'
+    | 'guide'
+    | 'notice'
+    | 'exams'
+    | 'timetable'
+    | 'data'
+  >('guide');
   const [customProgramPlans, setCustomProgramPlans] = useState<ProgramPlan[]>(
     [],
   );
@@ -766,40 +853,72 @@ export default function CourseExplorer({
   const [week, setWeek] = useState(2);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
+  const [historicalRecords, setHistoricalRecords] = useState<HistoricalRecord[]>(
+    [],
+  );
+  const [englishExemptionStatus, setEnglishExemptionStatus] =
+    useState<ExemptionStatus>('normal');
+  const [selectionMessage, setSelectionMessage] = useState('');
+  const [recommendationDialogOpen, setRecommendationDialogOpen] =
+    useState(false);
+  const [dataManagementMessage, setDataManagementMessage] = useState('');
+  const [dataManagementError, setDataManagementError] = useState('');
+  const [restorePreview, setRestorePreview] = useState<{
+    payload: BackupPayload;
+    summary: string[];
+  } | null>(null);
+  const [historyDraft, setHistoryDraft] = useState({
+    term: '',
+    courseName: '',
+    courseCode: '',
+    credits: '',
+    category: '公共必修课',
+    designation: 'unknown' as HistoricalRecord['designation'],
+    module: 'unknown' as HistoricalModule,
+  });
+  const [hiasDraft, setHiasDraft] = useState({
+    term: '',
+    attendanceCount: '',
+  });
   const dataFileRef = useRef<HTMLInputElement>(null);
   const programPlanFileRef = useRef<HTMLInputElement>(null);
-  const activeDataset = customDatasets.find(
-    (dataset) => dataset.id === activeTermId,
-  ) ?? {
-    id: DEFAULT_TERM_ID,
-    label: DEFAULT_TERM_LABEL,
-    courses: defaultCourses,
-    updatedAt: '',
-  };
+  const backupFileRef = useRef<HTMLInputElement>(null);
+  const activeDataset =
+    customDatasets.find((dataset) => dataset.id === activeTermId) ??
+    createTermTemplateDataset(activeTermId, defaultCourses) ??
+    createTermTemplateDataset(DEFAULT_TERM_ID, defaultCourses)!;
   const isDefaultTerm = activeDataset.id === DEFAULT_TERM_ID;
+  const activeTermDisplayLabel = activeDataset.shortLabel || activeDataset.label;
   const audienceLabel =
     activeDataset.audience ||
     (isDefaultTerm ? '2026 级研一新生专用' : '适用对象以课程数据说明为准');
   const heroDescription = isDefaultTerm
     ? '课程数据依据已整理的 2026 年秋季课表与培养方案材料，仅供参考，用于帮助大家模拟选课、查看冲突与规划学分；最终课程安排请以学校正式通知和选课系统为准。'
-    : `当前使用“${activeDataset.label}”课程数据，仅供参考，用于模拟选课、查看冲突与规划学分；适用年级、培养要求和最终课程安排请以对应学校通知及选课系统为准。`;
-  const initialCourses = activeDataset.courses;
-  const availableDatasets = useMemo(
-    () => [
-      customDatasets.find((dataset) => dataset.id === DEFAULT_TERM_ID) ?? {
-        id: DEFAULT_TERM_ID,
-        label: DEFAULT_TERM_LABEL,
-        courses: defaultCourses,
-        updatedAt: '',
-      },
-      ...customDatasets.filter((dataset) => dataset.id !== DEFAULT_TERM_ID),
-    ],
-    [customDatasets, defaultCourses],
+    : activeDataset.courses.length
+      ? `当前使用“${activeDataset.label}”课程数据，仅供参考，用于模拟选课、查看冲突与规划学分；适用年级、培养要求和最终课程安排请以对应学校通知及选课系统为准。`
+      : `当前为“${activeDataset.label}”学期模板，尚未载入课程数据；可在“数据管理”中导入本学期课表。培养要求、选课规则和最终课程安排请以对应学校通知及选课系统为准。`;
+  const initialCourses = useMemo(
+    () =>
+      activeDataset.courses.map((course) => ({
+        ...course,
+        module: getCourseModule(course),
+      })),
+    [activeDataset.courses],
   );
+  const availableDatasets = useMemo(() => {
+    const datasetMap = new Map<string, CourseDataset>();
+    TERM_TEMPLATES.forEach((term) => {
+      const dataset = createTermTemplateDataset(term.id, defaultCourses);
+      if (dataset) datasetMap.set(term.id, dataset);
+    });
+    customDatasets.forEach((dataset) => datasetMap.set(dataset.id, dataset));
+    return [...datasetMap.values()];
+  }, [customDatasets, defaultCourses]);
   const selectedIds = selectedByTerm[activeTermId] ?? EMPTY_SELECTED_IDS;
   const activeDesignations =
     designationsByTerm[activeTermId] ?? EMPTY_DESIGNATIONS;
   const selectedIdsRef = useRef(selectedIds);
+  const recommendationPromptRequestRef = useRef(false);
   const availableProgramPlans = useMemo(() => {
     const planMap = new Map<string, ProgramPlan>();
     [...PROGRAM_PLANS, ...customProgramPlans].forEach((plan) =>
@@ -830,6 +949,12 @@ export default function CourseExplorer({
     );
     const storedProgramPlans = window.localStorage.getItem(
       PROGRAM_PLANS_STORAGE_KEY,
+    );
+    const storedHistoricalRecords = window.localStorage.getItem(
+      HISTORICAL_RECORDS_STORAGE_KEY,
+    );
+    const storedEnglishExemption = window.localStorage.getItem(
+      ENGLISH_EXEMPTION_STORAGE_KEY,
     );
 
     let parsedDatasets: CourseDataset[] = [];
@@ -922,6 +1047,48 @@ export default function CourseExplorer({
         window.localStorage.removeItem(PROGRAM_PLANS_STORAGE_KEY);
       }
     }
+
+    let parsedHistoricalRecords: HistoricalRecord[] = [];
+    if (storedHistoricalRecords) {
+      try {
+        const parsed = JSON.parse(storedHistoricalRecords);
+        if (
+          Array.isArray(parsed) &&
+          parsed.every(
+            (record) =>
+              record &&
+              typeof record.id === 'string' &&
+              typeof record.term === 'string' &&
+              typeof record.courseName === 'string' &&
+              typeof record.courseCode === 'string' &&
+              typeof record.credits === 'number' &&
+              Number.isFinite(record.credits) &&
+              record.credits >= 0 &&
+              typeof record.category === 'string' &&
+              ['degree', 'non-degree', 'unknown'].includes(record.designation) &&
+              ['regular', 'innovation', 'hias', 'unknown'].includes(record.module) &&
+              (record.hours === undefined ||
+                (typeof record.hours === 'number' &&
+                  Number.isFinite(record.hours) &&
+                  record.hours >= 0)) &&
+              (record.attendanceCount === undefined ||
+                (typeof record.attendanceCount === 'number' &&
+                  Number.isFinite(record.attendanceCount) &&
+                  record.attendanceCount >= 0)) &&
+              (record.courseCount === null ||
+                typeof record.courseCount === 'number'),
+          )
+        ) {
+          parsedHistoricalRecords = parsed;
+        }
+      } catch {
+        window.localStorage.removeItem(HISTORICAL_RECORDS_STORAGE_KEY);
+      }
+    }
+    const parsedExemption: ExemptionStatus =
+      storedEnglishExemption === 'planned' || storedEnglishExemption === 'approved'
+        ? storedEnglishExemption
+        : 'normal';
     if (!Object.keys(parsedSelections).length && legacySelected) {
       try {
         const legacyIds = JSON.parse(legacySelected);
@@ -937,8 +1104,9 @@ export default function CourseExplorer({
     }
 
     const nextActiveTerm =
-      storedActiveTerm === DEFAULT_TERM_ID ||
-      parsedDatasets.some((dataset) => dataset.id === storedActiveTerm)
+      storedActiveTerm &&
+      (TERM_TEMPLATE_IDS.has(storedActiveTerm) ||
+        parsedDatasets.some((dataset) => dataset.id === storedActiveTerm))
         ? storedActiveTerm
         : DEFAULT_TERM_ID;
     setCustomDatasets(parsedDatasets);
@@ -946,6 +1114,8 @@ export default function CourseExplorer({
     setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
     setSelectedByTerm(parsedSelections);
     setDesignationsByTerm(parsedDesignations);
+    setHistoricalRecords(parsedHistoricalRecords);
+    setEnglishExemptionStatus(parsedExemption);
     setStorageReady(true);
   }, []);
 
@@ -982,6 +1152,18 @@ export default function CourseExplorer({
     );
   }, [customProgramPlans, storageReady]);
 
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem(
+      HISTORICAL_RECORDS_STORAGE_KEY,
+      JSON.stringify(historicalRecords),
+    );
+    window.localStorage.setItem(
+      ENGLISH_EXEMPTION_STORAGE_KEY,
+      englishExemptionStatus,
+    );
+  }, [englishExemptionStatus, historicalRecords, storageReady]);
+
   const setSelectedIdsForActive = useCallback(
     (next: string[] | ((current: string[]) => string[])) => {
       setSelectedByTerm((current) => {
@@ -995,9 +1177,14 @@ export default function CourseExplorer({
   );
 
   function courseDesignation(course: Course): CourseDesignation {
-    return (
-      activeDesignations[course.code] ||
-      (isNonDegreeOnly(course) ? 'non-degree' : 'unset')
+    return getCourseDesignation(course, activeDesignations, activePlan);
+  }
+
+  function courseRequirementType(course: Course): CourseRequirementType {
+    return getCourseRequirementType(
+      course,
+      courseDesignation(course),
+      activePlan,
     );
   }
 
@@ -1005,7 +1192,8 @@ export default function CourseExplorer({
     course: Course,
     designation: CourseDesignation,
   ) {
-    const nextDesignation = isNonDegreeOnly(course)
+    const nextDesignation =
+      getCourseRoleEligibility(course, activePlan).status === 'ineligible'
       ? 'non-degree'
       : designation;
     setDesignationsByTerm((current) => ({
@@ -1030,7 +1218,12 @@ export default function CourseExplorer({
         file.name.replace(/\.[^/.]+$/, '').trim(),
       );
       const dataset = isGenericFile
-        ? { ...parsedDataset, id: activeTermId, label: activeDataset.label }
+        ? {
+            ...parsedDataset,
+            id: activeTermId,
+            label: activeDataset.label,
+            shortLabel: activeDataset.shortLabel,
+          }
         : parsedDataset;
       const previousDataset = availableDatasets.find(
         (item) => item.id === dataset.id,
@@ -1218,24 +1411,92 @@ export default function CourseExplorer({
     () => initialCourses.filter((course) => selectedIds.includes(course.id)),
     [initialCourses, selectedIds],
   );
-  const selectedCredits = selectedCourses.reduce(
-    (sum, course) => sum + course.credits,
-    0,
+  const activePlan =
+    availableProgramPlans.find((plan) => plan.id === programPlanId) ??
+    availableProgramPlans[0] ??
+    PROGRAM_PLANS[0];
+  const creditSummary = useMemo(
+    () =>
+      calculateCreditSummary({
+        selectedCourses,
+        designations: activeDesignations,
+        historicalRecords,
+        exemptionStatus: englishExemptionStatus,
+        plan: activePlan,
+      }),
+    [
+      activeDesignations,
+      englishExemptionStatus,
+      historicalRecords,
+      selectedCourses,
+      activePlan,
+    ],
   );
+  const englishQualificationCredits = creditSummary.approvedExemptionCredits;
+  const englishQualificationDetail =
+    englishExemptionStatus === 'approved'
+      ? englishQualificationCredits > 0
+        ? `已计入公共必修学位课 +${formatCredits(englishQualificationCredits)} 学分，培养要求统计已同步。`
+        : '已获得资格；历史英语课程已计入，免修免考学分不重复累计。'
+      : '未计入英语免修免考学分，公共必修学位课不增加免修免考的 3 学分。';
+  const hiasHistorySummary = useMemo(() => {
+    const records = historicalRecords.filter((record) => record.module === 'hias');
+    const hours = records.reduce(
+      (sum, record) => sum + (record.hours ?? record.credits * 20),
+      0,
+    );
+    const attendanceCount = records.reduce(
+      (sum, record) => sum + (record.attendanceCount ?? (record.hours ?? record.credits * 20) / 2),
+      0,
+    );
+    return {
+      attendanceCount,
+      hours,
+      credits: records.reduce((sum, record) => sum + record.credits, 0),
+    };
+  }, [historicalRecords]);
+  const hiasPreview = useMemo(() => {
+    const attendanceCount = Number(hiasDraft.attendanceCount);
+    if (!Number.isInteger(attendanceCount) || attendanceCount <= 0) {
+      return null;
+    }
+    const hours = attendanceCount * 2;
+    return { attendanceCount, hours, credits: hours / 20 };
+  }, [hiasDraft.attendanceCount]);
+  const countedSelectedCourses = useMemo(() => {
+    const historicalCourseCodes = new Set(
+      historicalRecords
+        .map((record) => record.courseCode.trim())
+        .filter(Boolean),
+    );
+    return selectedCourses.filter(
+      (course) =>
+        !(englishExemptionStatus === 'approved' && isEnglishCourse(course)) &&
+        !historicalCourseCodes.has(course.code.trim()),
+    );
+  }, [englishExemptionStatus, historicalRecords, selectedCourses]);
+  const selectedCredits = creditSummary.plannedCredits;
   const selectedCreditBreakdown = useMemo(() => {
     const totals = new Map<string, number>();
-    selectedCourses.forEach((course) => {
+    countedSelectedCourses.forEach((course) => {
       totals.set(
         course.category,
         (totals.get(course.category) ?? 0) + course.credits,
       );
     });
     return [...totals.entries()].sort((left, right) => right[1] - left[1]);
-  }, [selectedCourses]);
-  const activePlan =
-    availableProgramPlans.find((plan) => plan.id === programPlanId) ??
-    availableProgramPlans[0] ??
-    PROGRAM_PLANS[0];
+  }, [countedSelectedCourses]);
+  const selectedRequirementBreakdown = useMemo(() => {
+    const totals = new Map<CourseRequirementType, number>();
+    countedSelectedCourses.forEach((course) => {
+      const requirementType = courseRequirementType(course);
+      totals.set(
+        requirementType,
+        (totals.get(requirementType) ?? 0) + course.credits,
+      );
+    });
+    return [...totals.entries()].sort((left, right) => right[1] - left[1]);
+  }, [countedSelectedCourses, activeDesignations, activePlan]);
   const planCoreCourses = useMemo(
     () =>
       initialCourses.filter((course) =>
@@ -1250,19 +1511,27 @@ export default function CourseExplorer({
       ),
     [activePlan, initialCourses],
   );
-  const selectedPlanCoreCount = selectedCourses.filter((course) =>
+  const planCourseCounts = useMemo(
+    () =>
+      getPlanCourseCounts({
+        courses: countedSelectedCourses,
+        plan: activePlan,
+        designations: activeDesignations,
+        historicalRecords,
+      }),
+    [
+      activeDesignations,
+      activePlan,
+      countedSelectedCourses,
+      historicalRecords,
+    ],
+  );
+  const selectedPlanCoreCount = countedSelectedCourses.filter((course) =>
     activePlan.coreCourses.includes(course.name),
   ).length;
-  const selectedPlanProfessionalCount = selectedCourses.filter((course) =>
+  const selectedPlanProfessionalCount = countedSelectedCourses.filter((course) =>
     activePlan.professionalCourses.includes(course.name),
   ).length;
-  const selectedPlanCredits = selectedCourses
-    .filter(
-      (course) =>
-        activePlan.coreCourses.includes(course.name) ||
-        activePlan.professionalCourses.includes(course.name),
-    )
-    .reduce((sum, course) => sum + course.credits, 0);
   const examGroups = useMemo(
     () =>
       EXAM_BUCKETS.map((bucket) => ({
@@ -1319,45 +1588,40 @@ export default function CourseExplorer({
     return pairs;
   }, [selectedCourses]);
 
-  const semesterMinimumTarget = /秋季|春季/.test(activeDataset.label)
+  const semesterMinimumTarget = /秋|春/.test(activeDataset.label)
     ? 10
     : null;
-  const semesterEligibleCredits = selectedCourses
+  const semesterEligibleCredits = countedSelectedCourses
     .filter(countsTowardSemesterMinimum)
     .reduce((sum, course) => sum + course.credits, 0);
-  const selectedPublicRequiredCredits = selectedCourses
-    .filter((course) => course.category === '公共必修课')
-    .reduce((sum, course) => sum + course.credits, 0);
-  const selectedPublicElectiveCredits = selectedCourses
-    .filter((course) => course.category === '公共选修课')
-    .reduce((sum, course) => sum + course.credits, 0);
-  const selectedInnovationCredits = selectedCourses
-    .filter((course) =>
-      INNOVATION_COURSE_NAMES.has(courseBaseName(course.name)),
-    )
-    .reduce((sum, course) => sum + course.credits, 0);
-  const selectedSportsCourses = selectedCourses.filter(
+  const semesterCreditGap =
+    semesterMinimumTarget === null
+      ? 0
+      : Math.max(0, semesterMinimumTarget - semesterEligibleCredits);
+  const selectedPublicRequiredDegreeCredits =
+    creditSummary.publicRequiredDegreeCredits;
+  const selectedPublicRequiredNonDegreeCredits =
+    creditSummary.publicRequiredNonDegreeCredits;
+  const selectedPublicElectiveCredits = creditSummary.publicElectiveCredits;
+  const selectedInnovationCredits = creditSummary.innovationCredits;
+  const selectedSportsCourses = countedSelectedCourses.filter(
     (course) => course.subject === '体育学',
   );
-  const selectedDegreeCoreCount = selectedCourses.filter(
-    (course) =>
-      courseDesignation(course) === 'degree' &&
-      activePlan.coreCourses.includes(course.name),
-  ).length;
-  const selectedDegreeProfessionalCount = selectedCourses.filter(
-    (course) =>
-      courseDesignation(course) === 'degree' &&
-      activePlan.professionalCourses.includes(course.name),
-  ).length;
-  const unsetDesignationCount = selectedCourses.filter(
-    (course) => courseDesignation(course) === 'unset',
+  const selectedDegreeCoreCount = planCourseCounts.coreCount;
+  const selectedDegreeProfessionalCount = planCourseCounts.professionalCount;
+  const unsetDesignationCount = countedSelectedCourses.filter(
+    (course) => getCourseDesignation(course, activeDesignations, activePlan) === 'unset',
   ).length;
   const invalidDegreeCourses = selectedCourses.filter(
     (course) =>
-      activeDesignations[course.code] === 'degree' && isNonDegreeOnly(course),
+      activeDesignations[course.code] === 'degree' &&
+      getCourseRoleEligibility(course, activePlan).status === 'ineligible',
   );
   const publicElectiveTarget =
     activePlan.publicElectiveCredits + (activePlan.innovationCredits ?? 0);
+  const publicRequiredDegreeTarget = activePlan.publicRequiredDegreeCredits ?? null;
+  const publicRequiredNonDegreeTarget =
+    activePlan.publicRequiredNonDegreeCredits ?? null;
   const checkupItems: CheckupItem[] = [
     {
       id: 'credits',
@@ -1419,17 +1683,32 @@ export default function CourseExplorer({
           : 'info',
     },
     {
-      id: 'public-required',
-      title: '公共必修课',
+      id: 'public-required-degree',
+      title: '公共必修学位课',
       value:
-        activePlan.publicRequiredCredits === null
-          ? `${formatCredits(selectedPublicRequiredCredits)} 学分`
-          : `${formatCredits(selectedPublicRequiredCredits)} / ${activePlan.publicRequiredCredits} 学分`,
-      detail: '英语免修、慕课资格等无法由课表判断，需要自行结合认定结果核对。',
+        publicRequiredDegreeTarget === null
+          ? `${formatCredits(selectedPublicRequiredDegreeCredits)} 学分`
+          : `${formatCredits(selectedPublicRequiredDegreeCredits)} / ${publicRequiredDegreeTarget} 学分`,
+      detail: '公共必修学位课与专业学位课分开统计；英语免修仍按免修状态处理。',
       status:
-        activePlan.publicRequiredCredits === null
+        publicRequiredDegreeTarget === null
           ? 'info'
-          : selectedPublicRequiredCredits >= activePlan.publicRequiredCredits
+          : selectedPublicRequiredDegreeCredits >= publicRequiredDegreeTarget
+            ? 'pass'
+            : 'info',
+    },
+    {
+      id: 'public-required-non-degree',
+      title: '公共必修非学位课',
+      value:
+        publicRequiredNonDegreeTarget === null
+          ? `${formatCredits(selectedPublicRequiredNonDegreeCredits)} 学分`
+          : `${formatCredits(selectedPublicRequiredNonDegreeCredits)} / ${publicRequiredNonDegreeTarget} 学分`,
+      detail: '工程硕士必须修读《工程伦理》，但该课程不计入任何学位课学分。',
+      status:
+        publicRequiredNonDegreeTarget === null
+          ? 'info'
+          : selectedPublicRequiredNonDegreeCredits >= publicRequiredNonDegreeTarget
             ? 'pass'
             : 'info',
     },
@@ -1440,7 +1719,7 @@ export default function CourseExplorer({
       detail:
         activePlan.innovationCredits === null
           ? '按当前培养方向的公共选修课要求统计。'
-          : `专硕合计要求中包含 ${formatCredits(activePlan.innovationCredits)} 学分创新创业模块。`,
+          : `公共选修合计要求包含 ${formatCredits(activePlan.innovationCredits)} 学分创新创业模块，实际学分只累计一次。`,
       status:
         selectedPublicElectiveCredits >= publicElectiveTarget ? 'pass' : 'info',
     },
@@ -1554,21 +1833,232 @@ export default function CourseExplorer({
     selectedCourses,
   ]);
 
-  function toggleCourse(id: string) {
+  const requirementGaps = useMemo(() => {
+    return {
+      publicRequiredDegree: Math.max(
+        0,
+        (publicRequiredDegreeTarget ?? 0) -
+          creditSummary.publicRequiredDegreeCredits,
+      ),
+      publicRequiredNonDegree: Math.max(
+        0,
+        (publicRequiredNonDegreeTarget ?? 0) -
+          creditSummary.publicRequiredNonDegreeCredits,
+      ),
+      degreeCredits: Math.max(
+        0,
+        activePlan.degreeCourseCredits -
+          creditSummary.professionalDegreeCredits,
+      ),
+      nonDegreeCredits: Math.max(
+        0,
+        (activePlan.professionalNonDegreeCredits ?? 0) -
+          creditSummary.professionalElectiveCredits,
+      ),
+      publicElective: Math.max(
+        0,
+        publicElectiveTarget - creditSummary.publicElectiveCredits,
+      ),
+      innovation: Math.max(
+        0,
+        (activePlan.innovationCredits ?? 0) - creditSummary.innovationCredits,
+      ),
+      coreCount: Math.max(0, activePlan.coreMinimum - selectedDegreeCoreCount),
+      professionalCount: Math.max(
+        0,
+        activePlan.professionalMinimum - selectedDegreeProfessionalCount,
+      ),
+    };
+  }, [
+    activePlan,
+    creditSummary,
+    publicRequiredDegreeTarget,
+    publicRequiredNonDegreeTarget,
+    publicElectiveTarget,
+    selectedDegreeCoreCount,
+    selectedDegreeProfessionalCount,
+  ]);
+
+  const recommendationCandidates = useMemo(() => {
+    if (!selectedCourses.length) return [];
+    const candidates = initialCourses
+      .filter((course) => !selectedIds.includes(course.id))
+      .filter((course) =>
+        selectedCourses.every((selected) => !coursesConflict(course, selected)),
+      )
+      .filter((course) =>
+        selectedCourses.every(
+          (selected) => courseFamilyKey(selected) !== courseFamilyKey(course),
+        ),
+      )
+      .map((course) => {
+        const reasons: string[] = [];
+        const requirementType = getCourseRequirementType(
+          course,
+          getCourseDesignation(course, {}, activePlan),
+          activePlan,
+        );
+        const degreeEligibility = getDegreeEligibility(course, activePlan);
+        const inCore =
+          degreeEligibility.status === 'eligible' &&
+          ['subject-core', 'professional-core'].includes(
+            getCourseCodeCategory(course.code),
+          );
+        const inProfessional =
+          degreeEligibility.status === 'eligible' &&
+          getCourseCodeCategory(course.code) === 'professional';
+        if (
+          semesterCreditGap > 0 &&
+          countsTowardSemesterMinimum(course)
+        ) {
+          reasons.push(
+            `可补本学期有效选课学分缺口 ${formatCredits(semesterCreditGap)} 学分（秋季/春季目标不少于 10 学分）`,
+          );
+        }
+        if (
+          requirementGaps.publicRequiredDegree > 0 &&
+          requirementType === 'publicRequiredDegree'
+        ) {
+          reasons.push(
+            `可补公共必修学位课 ${formatCredits(requirementGaps.publicRequiredDegree)} 学分缺口`,
+          );
+        }
+        if (
+          requirementGaps.publicRequiredNonDegree > 0 &&
+          requirementType === 'publicRequiredNonDegree'
+        ) {
+          reasons.push(
+            `可补公共必修非学位课 ${formatCredits(requirementGaps.publicRequiredNonDegree)} 学分缺口`,
+          );
+        }
+        if (requirementGaps.innovation > 0 && isInnovationCourse(course)) {
+          reasons.push('可补创新创业模块；该学分同时属于公共选修归属，不重复累计');
+        } else if (
+          requirementGaps.publicElective > 0 &&
+          requirementType === 'publicElective' &&
+          !isInnovationCourse(course)
+        ) {
+          reasons.push(`可补公共选修 ${formatCredits(requirementGaps.publicElective)} 学分缺口`);
+        }
+        if (
+          (requirementGaps.coreCount > 0 || requirementGaps.degreeCredits > 0) &&
+          inCore
+        ) {
+          reasons.push(
+            `培养方案核心课候选；核心课门数还差 ${requirementGaps.coreCount} 门，加入后仍需确认学位属性`,
+          );
+        }
+        if (
+          (requirementGaps.professionalCount > 0 || requirementGaps.degreeCredits > 0) &&
+          inProfessional
+        ) {
+          reasons.push(
+            `培养方案专业课候选；专业课门数还差 ${requirementGaps.professionalCount} 门，加入后仍需确认学位属性`,
+          );
+        }
+        if (
+          requirementGaps.nonDegreeCredits > 0 &&
+          requirementType === 'professionalElective'
+        ) {
+          reasons.push('只能作为非学位课，可补专业选修课缺口');
+        }
+        if (
+          requirementGaps.coreCount === 0 &&
+          requirementGaps.professionalCount === 0 &&
+          requirementGaps.degreeCredits === 0 &&
+          requirementGaps.publicRequiredDegree === 0 &&
+          requirementGaps.publicRequiredNonDegree === 0 &&
+          requirementGaps.publicElective === 0 &&
+          requirementGaps.innovation === 0 &&
+          course.subject === '体育学' &&
+          selectedSportsCourses.length === 0
+        ) {
+          reasons.push('体育类公共选修每学期限选一门；当前可作为互斥备选');
+        }
+        return { course, reasons };
+      })
+      .filter((item) => item.reasons.length > 0)
+      .sort((left, right) => right.reasons.length - left.reasons.length);
+    const seenCourseFamilies = new Set<string>();
+    const uniqueCandidates = candidates.filter(({ course }) => {
+      const family = courseFamilyKey(course);
+      if (seenCourseFamilies.has(family)) return false;
+      seenCourseFamilies.add(family);
+      return true;
+    });
+    return uniqueCandidates.slice(0, 6);
+  }, [
+    activePlan,
+    initialCourses,
+    publicElectiveTarget,
+    requirementGaps,
+    semesterCreditGap,
+    selectedCourses,
+    selectedIds,
+    selectedSportsCourses.length,
+  ]);
+
+  const recommendationCombination = useMemo(() => {
+    const combination: Course[] = [];
+    let combinationCredits = 0;
+    for (const item of recommendationCandidates) {
+      if (
+        combination.some(
+          (course) => courseFamilyKey(course) === courseFamilyKey(item.course),
+        ) ||
+        combination.some((course) => coursesConflict(course, item.course))
+      ) {
+        continue;
+      }
+      combination.push(item.course);
+      combinationCredits += item.course.credits;
+      if (combination.length === 4) break;
+      if (semesterCreditGap > 0 && combinationCredits >= semesterCreditGap) {
+        break;
+      }
+    }
+    return combination;
+  }, [recommendationCandidates, semesterCreditGap]);
+
+  useEffect(() => {
+    if (!storageReady || !recommendationPromptRequestRef.current) return;
+    recommendationPromptRequestRef.current = false;
+    if (selectedCourses.length && recommendationCandidates.length) {
+      setRecommendationDialogOpen(true);
+    }
+  }, [recommendationCandidates.length, selectedCourses.length, storageReady]);
+
+  function toggleCourse(id: string, options?: { prompt?: boolean }) {
     const course = initialCourses.find((item) => item.id === id);
+    if (!course) return;
+    const selectedSameCourse = selectedCourses.find(
+      (selected) =>
+      selected.id !== course.id &&
+        courseFamilyKey(selected) === courseFamilyKey(course),
+    );
+    if (!selectedIds.includes(id) && options?.prompt !== false) {
+      recommendationPromptRequestRef.current = true;
+    }
     if (
-      course &&
       !selectedIds.includes(id) &&
-      isNonDegreeOnly(course) &&
+      getCourseRoleEligibility(course, activePlan).status === 'ineligible' &&
       !activeDesignations[course.code]
     ) {
       setCourseDesignation(course, 'non-degree');
     }
-    setSelectedIdsForActive((current) =>
-      current.includes(id)
-        ? current.filter((item) => item !== id)
-        : [...current, id],
-    );
+    setSelectedIdsForActive((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (selectedSameCourse) {
+        setSelectionMessage(
+          `已将同一课程的 ${selectedSameCourse.name} 替换为 ${course.name}；同一课程不同班次按备选处理。`,
+        );
+        return [
+          ...current.filter((item) => item !== selectedSameCourse.id),
+          id,
+        ];
+      }
+      return [...current, id];
+    });
   }
 
   function replaceCourse(sourceId: string, replacementId: string) {
@@ -1581,7 +2071,8 @@ export default function CourseExplorer({
       setDesignationsByTerm((current) => {
         const next = { ...current[activeTermId] };
         delete next[source.code];
-        next[replacement.code] = isNonDegreeOnly(replacement)
+        next[replacement.code] =
+          getCourseRoleEligibility(replacement, activePlan).status === 'ineligible'
           ? 'non-degree'
           : designation;
         return { ...current, [activeTermId]: next };
@@ -1594,11 +2085,11 @@ export default function CourseExplorer({
   }
 
   function getConflictAlternatives(source: Course) {
-    const baseName = courseBaseName(source.name);
+    const baseName = courseFamilyKey(source);
     return initialCourses.filter((candidate) => {
       if (
         candidate.id === source.id ||
-        courseBaseName(candidate.name) !== baseName
+        courseFamilyKey(candidate) !== baseName
       ) {
         return false;
       }
@@ -1678,10 +2169,222 @@ export default function CourseExplorer({
     URL.revokeObjectURL(url);
   }
 
+  function downloadJson(fileName: string, payload: unknown) {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(payload, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      }),
+    );
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportBackup() {
+    const payload: BackupPayload = {
+      version: BACKUP_VERSION,
+      app: 'HIAS-CSA',
+      savedAt: new Date().toISOString(),
+      activeTermId,
+      customDatasets,
+      selectedByTerm,
+      designationsByTerm,
+      programPlans: customProgramPlans,
+      historicalRecords,
+      englishExemptionStatus,
+    };
+    downloadJson('HIAS-CSA-备份-v2.json', payload);
+    setDataManagementMessage('备份已导出，包含选课、属性、培养方案、历史记录和免修状态。');
+    setDataManagementError('');
+  }
+
+  function parseBackupPayload(raw: unknown): BackupPayload {
+    if (!raw || typeof raw !== 'object') throw new Error('备份文件不是对象。');
+    const value = raw as Partial<BackupPayload>;
+    if (value.app !== 'HIAS-CSA' || value.version !== BACKUP_VERSION) {
+      throw new Error(`仅支持 HIAS-CSA v${BACKUP_VERSION} 备份文件。`);
+    }
+    if (
+      !Array.isArray(value.customDatasets) ||
+      !value.customDatasets.every(
+        (dataset) =>
+          dataset &&
+          typeof dataset.id === 'string' &&
+          typeof dataset.label === 'string' &&
+          Array.isArray(dataset.courses) &&
+          dataset.courses.every(isCourse),
+      )
+    ) {
+      throw new Error('备份中的课程数据格式不完整。');
+    }
+    if (
+      !value.selectedByTerm ||
+      typeof value.selectedByTerm !== 'object' ||
+      !value.designationsByTerm ||
+      typeof value.designationsByTerm !== 'object' ||
+      !Array.isArray(value.programPlans) ||
+      !value.programPlans.every(isProgramPlan) ||
+      !Array.isArray(value.historicalRecords) ||
+      !value.historicalRecords.every(
+        (record) =>
+          record &&
+          typeof record.id === 'string' &&
+          typeof record.term === 'string' &&
+          typeof record.courseName === 'string' &&
+          typeof record.courseCode === 'string' &&
+          typeof record.credits === 'number' &&
+          typeof record.category === 'string',
+      ) ||
+      !['normal', 'planned', 'approved'].includes(value.englishExemptionStatus || '')
+    ) {
+      throw new Error('备份中的选课、培养方案或历史记录格式不完整。');
+    }
+    return value as BackupPayload;
+  }
+
+  async function handleBackupImport(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setDataManagementError('');
+    setDataManagementMessage('');
+    try {
+      const payload = parseBackupPayload(JSON.parse(await file.text()));
+      const currentCourseIds = new Set(
+        [
+          ...availableDatasets,
+          ...payload.customDatasets,
+        ].flatMap((dataset) => dataset.courses.map((course) => course.id)),
+      );
+      const importedSelected = Object.values(payload.selectedByTerm).flat();
+      const unmatched = importedSelected.filter((id) => !currentCourseIds.has(id));
+      const existingDatasetIds = new Set(availableDatasets.map((dataset) => dataset.id));
+      const added = payload.customDatasets.filter(
+        (dataset) => !existingDatasetIds.has(dataset.id),
+      ).length;
+      const replaced = payload.customDatasets.length - added;
+      setRestorePreview({
+        payload,
+        summary: [
+          `将新增 ${added} 个课程数据集，替换 ${replaced} 个同名数据集。`,
+          `将恢复 ${importedSelected.length} 条按学期保存的选课记录。`,
+          unmatched.length
+            ? `${unmatched.length} 条选课记录在当前内置数据中无法匹配，应用后会保留记录但不加入当前课程表。`
+            : '所有备份中的课程记录都能在当前数据中匹配。',
+          `将恢复 ${payload.historicalRecords.length} 条历史记录和英语免修状态。`,
+        ],
+      });
+    } catch (error) {
+      setDataManagementError(
+        error instanceof Error ? error.message : '备份读取失败，请检查文件。',
+      );
+    }
+  }
+
+  function applyRestore() {
+    if (!restorePreview) return;
+    const { payload } = restorePreview;
+    setCustomDatasets(payload.customDatasets);
+    setActiveTermId(
+      (TERM_TEMPLATE_IDS.has(payload.activeTermId) ||
+        payload.customDatasets.some((dataset) => dataset.id === payload.activeTermId))
+        ? payload.activeTermId
+        : DEFAULT_TERM_ID,
+    );
+    setSelectedByTerm(payload.selectedByTerm);
+    setDesignationsByTerm(payload.designationsByTerm);
+    setCustomProgramPlans(payload.programPlans);
+    setHistoricalRecords(payload.historicalRecords);
+    setEnglishExemptionStatus(payload.englishExemptionStatus);
+    setRestorePreview(null);
+    setDataManagementMessage('备份已恢复；原有内置课程数据仍保留，无法匹配的记录未被删除。');
+  }
+
+  function addHistoricalRecord() {
+    const credits = Number(historyDraft.credits);
+    if (!Number.isFinite(credits) || credits <= 0) {
+      setDataManagementError('请填写大于 0 的历史学分。');
+      return;
+    }
+    const matchedCourse = initialCourses.find(
+      (course) => course.code === historyDraft.courseCode.trim(),
+    );
+    setHistoricalRecords((current) => [
+      ...current,
+      {
+        id: `history-${Date.now()}`,
+        term: historyDraft.term.trim() || '学期待补充',
+        courseName: historyDraft.courseName.trim(),
+        courseCode: historyDraft.courseCode.trim(),
+        credits,
+        category: historyDraft.category,
+        subject: matchedCourse?.subject,
+        designation: historyDraft.designation,
+        module: historyDraft.module,
+        courseCount: historyDraft.courseName.trim() ? 1 : null,
+        source: '用户手动录入',
+      },
+    ]);
+    setHistoryDraft((current) => ({
+      ...current,
+      courseName: '',
+      courseCode: '',
+      credits: '',
+    }));
+    setDataManagementError('');
+    setDataManagementMessage('历史记录已加入，统计会立即更新。');
+  }
+
+  function addHiasRecord() {
+    const attendanceCount = Number(hiasDraft.attendanceCount);
+    if (!Number.isInteger(attendanceCount) || attendanceCount <= 0) {
+      setDataManagementError('请填写大于 0 的整数参加次数。');
+      return;
+    }
+    const hours = attendanceCount * 2;
+    const credits = hours / 20;
+    setHistoricalRecords((current) => [
+      ...current,
+      {
+        id: `history-hias-${Date.now()}`,
+        term: hiasDraft.term.trim() || '学期待补充',
+        courseName: 'HIAS讲堂',
+        courseCode: 'HIAS-LECTURE',
+        credits,
+        category: '专业选修课',
+        subject: '人文系列讲座',
+        designation: 'non-degree',
+        module: 'hias',
+        hours,
+        attendanceCount,
+        courseCount: 0,
+        source: '用户手动录入·按 2 学时/次、20 学时/学分换算',
+      },
+    ]);
+    setHiasDraft({ term: '', attendanceCount: '' });
+    setDataManagementError('');
+    setDataManagementMessage(
+      `已加入 ${attendanceCount} 次 HIAS 讲堂（${hours} 学时，${formatCredits(credits)} 学分），归入专业非学位课。`,
+    );
+  }
+
+  function setEnglishStatus(status: ExemptionStatus) {
+    setEnglishExemptionStatus(status);
+    setSelectionMessage(
+      status === 'normal'
+        ? '已设置为未获得英语免修免考资格；已选英语课程仍保留。'
+        : status === 'planned'
+          ? '旧版备份中的拟申请状态按未获得英语免修免考资格处理；已选英语课程仍保留。'
+          : '已标记为已获得英语免修免考资格：按培养要求计入，已选英语课程保留但不重复计分，请按学校审核结果核对。',
+    );
+  }
+
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#f7f7f2] text-slate-900">
       <div className="mx-auto max-w-[1380px] px-3 py-4 sm:px-5 lg:px-7">
-        <section className="hero-panel relative overflow-hidden rounded-[26px] border border-[#dce5de] px-5 py-6 shadow-[0_22px_65px_rgba(61,83,72,.10)] sm:px-8 sm:py-7">
+        <section className="hero-panel relative overflow-hidden rounded-[26px] border border-[#dce5de] px-5 py-4 shadow-[0_18px_48px_rgba(61,83,72,.09)] sm:px-7 sm:py-5">
           <div className="hero-doodle hero-doodle-one" />
           <div className="hero-doodle hero-doodle-two" />
           <div className="relative z-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-stretch">
@@ -1693,20 +2396,20 @@ export default function CourseExplorer({
                 <span>研究生预选课辅助工具</span>
               </div>
               <p className="mb-3 inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#dceee8]">
-                {activeDataset.label} · HIAS
+                {activeTermDisplayLabel} · HIAS
               </p>
               <h1 className="max-w-3xl text-[2rem] font-bold leading-[1.18] tracking-[-0.035em] text-white sm:text-[2.45rem]">
-                {activeDataset.label}预选课助手
+                {activeTermDisplayLabel}预选课助手
               </h1>
-              <p className="mt-3 max-w-2xl text-[0.9rem] leading-7 text-[#d8e6e2] sm:text-[0.96rem]">
+              <p className="mt-2 max-w-2xl text-[0.86rem] leading-6 text-[#d8e6e2] sm:text-[0.92rem]">
                 {heroDescription}
               </p>
-              <div className="hero-meta mt-5">
+              <div className="hero-meta mt-3">
                 <span>
                   <Users /> {audienceLabel}
                 </span>
                 <span>
-                  <FileSpreadsheet /> {activeDataset.label}课表数据
+                  <FileSpreadsheet /> {activeTermDisplayLabel}课表数据
                 </span>
                 <span>
                   <BookOpen /> {initialCourses.length} 门课程
@@ -1725,18 +2428,23 @@ export default function CourseExplorer({
             <aside className="plan-summary">
               <div>
                 <p>MY PRESELECTION</p>
-                <div className="credit-spotlight mt-3">
+                <div className="credit-spotlight mt-2">
                   <div className="flex items-end gap-2">
                     <strong>{formatCredits(selectedCredits)}</strong>
-                    <span>学分</span>
+                    <span>本学期预选学分</span>
                   </div>
                   <div className="plan-course-count">
                     已选 <b>{selectedCourses.length}</b> 门课程
                   </div>
+                  {creditSummary.duplicatePlannedCourseCount > 0 && (
+                    <p className="mt-2 text-xs leading-5 text-amber-700">
+                      有 {creditSummary.duplicatePlannedCourseCount} 门课程已在历史记录中，预选学分已避免重复累计。
+                    </p>
+                  )}
                 </div>
                 {selectedCreditBreakdown.length > 0 ? (
                   <>
-                    <div className="mt-4 text-xs font-semibold text-slate-500">
+                    <div className="mt-3 text-xs font-semibold text-slate-500">
                       已选类别明细
                     </div>
                     <div className="credit-breakdown mt-2">
@@ -1751,6 +2459,21 @@ export default function CourseExplorer({
                   <div className="credit-empty mt-4">
                     选择课程后，这里会汇总学分
                   </div>
+                )}
+                {selectedRequirementBreakdown.length > 0 && (
+                  <>
+                    <div className="mt-3 text-xs font-semibold text-slate-500">
+                      培养要求归属
+                    </div>
+                    <div className="credit-breakdown mt-2">
+                      {selectedRequirementBreakdown.map(([type, credits]) => (
+                        <span key={type}>
+                          {getCourseRequirementTypeLabel(type)}{' '}
+                          {formatCredits(credits)}
+                        </span>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
               <div className="mt-6 grid grid-cols-2 gap-2.5">
@@ -1785,13 +2508,13 @@ export default function CourseExplorer({
         </section>
 
         <section className="relative z-20 mt-3.5 rounded-[22px] border border-[#e1e5df] bg-white/94 p-3.5 shadow-[0_14px_40px_rgba(61,83,72,.07)] backdrop-blur sm:p-4">
-          <div className="mb-3 flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3.5 sm:flex-row sm:items-end sm:justify-between">
+            <div className="mb-3 flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3.5 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <label
                 className="mb-1.5 block text-xs font-semibold tracking-wide text-slate-500"
                 htmlFor="term-select"
               >
-                当前课程数据学期
+                选择浏览的学期
               </label>
               <div className="flex flex-wrap items-center gap-2">
                 <NativeSelect
@@ -1816,27 +2539,40 @@ export default function CourseExplorer({
                 </span>
               </div>
             </div>
-            <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
-              <input
-                accept=".json,application/json"
-                className="sr-only"
-                onChange={handleCourseDataImport}
-                ref={dataFileRef}
-                type="file"
-              />
+            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+              <div
+                aria-label="英语免修免考状态"
+                className="english-status-compact"
+              >
+                <span className="english-status-compact-title">英语免修免考</span>
+                <label className="english-status-toggle">
+                  <input
+                    aria-label="已获得英语免修免考资格"
+                    checked={englishExemptionStatus === 'approved'}
+                    onChange={(event) =>
+                      setEnglishStatus(event.target.checked ? 'approved' : 'normal')
+                    }
+                    type="checkbox"
+                  />
+                  <span>已获得免修免考资格</span>
+                </label>
+                <Badge
+                  className={`english-status-badge english-status-badge-${englishStatusTone(englishExemptionStatus)}`}
+                  variant="secondary"
+                >
+                  {englishStatusLabel(englishExemptionStatus)}
+                </Badge>
+              </div>
               <Button
                 className="h-10 rounded-xl border-blue-200 bg-white px-4 text-blue-700 hover:bg-blue-50"
-                onClick={() => dataFileRef.current?.click()}
+                onClick={() => setView('data')}
                 variant="outline"
               >
-                <RefreshCw /> 一键更新课程数据
+                <RefreshCw /> 数据管理
               </Button>
-              <span className="text-right text-[0.72rem] leading-5 text-slate-500">
-                选择课程数据 JSON；更新后会自动校验并按课程编码保留已选项
-              </span>
             </div>
           </div>
-          {(dataMessage || dataError) && (
+          {(dataMessage || dataError) && view !== 'data' && (
             <div
               className={`mb-3 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
                 dataError
@@ -1848,6 +2584,28 @@ export default function CourseExplorer({
               {dataError || dataMessage}
             </div>
           )}
+          {selectionMessage && (
+            <output className="mb-3 block rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-6 text-amber-800">
+              {selectionMessage}
+            </output>
+          )}
+          <div
+            className={`english-status-banner english-status-banner-${englishStatusTone(englishExemptionStatus)}`}
+            role="status"
+          >
+            <div className="english-status-banner-main">
+              {englishExemptionStatus === 'approved' ? <CheckCircle2 /> : <TriangleAlert />}
+              <div>
+                <strong>英语免修免考资格：{englishStatusLabel(englishExemptionStatus)}</strong>
+                <span>{englishQualificationDetail}</span>
+              </div>
+            </div>
+            <span className="english-status-banner-credit">
+              {englishExemptionStatus === 'approved'
+                ? `培养要求 +${formatCredits(englishQualificationCredits)} 学分`
+                : '培养要求暂不计入'}
+            </span>
+          </div>
           <div className="grid gap-2.5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(260px,1.35fr)_repeat(4,minmax(138px,.62fr))_auto]">
             <label className="relative block" htmlFor="course-search">
               <span className="sr-only">搜索课程</span>
@@ -1961,12 +2719,34 @@ export default function CourseExplorer({
             <div className="flex w-full flex-wrap items-center gap-2.5 md:w-auto md:justify-end">
               <div className="selection-credit-pill" aria-live="polite">
                 <Sparkles />
-                <span>已选总计</span>
+                <span>本学期预选</span>
                 <strong>{formatCredits(selectedCredits)}</strong>
                 <b>学分</b>
                 <small>{selectedCourses.length} 门课</small>
               </div>
+              <Badge
+                className={`english-status-top-badge english-status-badge-${englishStatusTone(englishExemptionStatus)}`}
+                variant="secondary"
+              >
+                英语免修免考：{englishExemptionStatus === 'approved' ? '已获得' : '未获得'}
+              </Badge>
+              {selectedCourses.length > 0 && recommendationCandidates.length > 0 && (
+                <Button
+                  className="h-10 rounded-xl border-amber-200 bg-amber-50 px-3 text-amber-800 hover:bg-amber-100"
+                  onClick={() => setRecommendationDialogOpen(true)}
+                  variant="outline"
+                >
+                  <Sparkles /> 补充建议 {recommendationCandidates.length}
+                </Button>
+              )}
               <div className="grid w-full grid-cols-2 rounded-xl bg-slate-100 p-1 sm:w-auto sm:flex">
+                <button
+                  className={`view-tab ${view === 'guide' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('guide')}
+                  type="button"
+                >
+                  <ClipboardList /> 培养要求
+                </button>
                 <button
                   className={`view-tab ${view === 'courses' ? 'view-tab-active' : ''}`}
                   onClick={() => setView('courses')}
@@ -1980,13 +2760,6 @@ export default function CourseExplorer({
                   type="button"
                 >
                   <ShieldCheck /> 选课体检
-                </button>
-                <button
-                  className={`view-tab ${view === 'guide' ? 'view-tab-active' : ''}`}
-                  onClick={() => setView('guide')}
-                  type="button"
-                >
-                  <ClipboardList /> 培养要求
                 </button>
                 <button
                   className={`view-tab ${view === 'exams' ? 'view-tab-active' : ''}`}
@@ -2008,6 +2781,13 @@ export default function CourseExplorer({
                   type="button"
                 >
                   <Info /> 选课须知
+                </button>
+                <button
+                  className={`view-tab ${view === 'data' ? 'view-tab-active' : ''}`}
+                  onClick={() => setView('data')}
+                  type="button"
+                >
+                  <ShieldCheck /> 数据管理
                 </button>
               </div>
             </div>
@@ -2086,8 +2866,8 @@ export default function CourseExplorer({
                               </div>
                             </div>
                           ))}
-                        </div>
-                      ) : (
+                  </div>
+                ) : (
                         <div className="conflict-no-alternative">
                           暂无可直接替换的同课无冲突班次
                         </div>
@@ -2133,6 +2913,27 @@ export default function CourseExplorer({
                             >
                               {course.category}
                             </Badge>
+                            <Badge
+                              className={
+                                courseRequirementType(course) === 'pending'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : courseRequirementType(course).includes('Degree') ||
+                                      courseRequirementType(course) === 'publicRequiredDegree'
+                                    ? 'bg-indigo-50 text-indigo-700'
+                                    : 'bg-teal-50 text-teal-700'
+                              }
+                              variant="secondary"
+                            >
+                              {getCourseRequirementTypeLabel(courseRequirementType(course))}
+                            </Badge>
+                            {isInnovationCourse(course) && (
+                              <Badge
+                                className="bg-fuchsia-50 text-fuchsia-700"
+                                variant="secondary"
+                              >
+                                创新创业课
+                              </Badge>
+                            )}
                             <Badge
                               className="bg-emerald-50 text-emerald-700"
                               variant="secondary"
@@ -2266,11 +3067,22 @@ export default function CourseExplorer({
             ) : (
               <div className="empty-state">
                 <SlidersHorizontal />
-                <h3>没有找到匹配课程</h3>
-                <p>试试缩短关键词，或清空部分筛选条件。</p>
-                <Button onClick={clearFilters} variant="outline">
-                  清空筛选
-                </Button>
+                <h3>{initialCourses.length ? '没有找到匹配课程' : '本学期尚未载入课程数据'}</h3>
+                <p>
+                  {initialCourses.length
+                    ? '试试缩短关键词，或清空部分筛选条件。'
+                    : '请在“数据管理”中导入本学期课程 JSON；当前学期的选课记录会独立保存。'}
+                </p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button onClick={clearFilters} variant="outline">
+                    清空筛选
+                  </Button>
+                  {!initialCourses.length && (
+                    <Button onClick={() => setView('data')} variant="outline">
+                      打开数据管理
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -2333,6 +3145,12 @@ export default function CourseExplorer({
                 ) : (
                   <TriangleAlert />
                 )}
+                <div className="hero-summary-grid mt-4">
+                  <span><b>{conflictPairs.length}</b> 冲突</span>
+                  <span><b>{unsetDesignationCount}</b> 待确认</span>
+                  <span><b>{formatCredits(creditSummary.historicalCredits)}</b> 已修</span>
+                  <span><b>{formatCredits(creditSummary.estimatedCredits)}</b> 预计累计</span>
+                </div>
               </div>
               <div>
                 <span>{activePlan.label}</span>
@@ -2406,7 +3224,8 @@ export default function CourseExplorer({
                 <div className="designation-list">
                   {selectedCourses.map((course) => {
                     const designation = courseDesignation(course);
-                    const nonDegreeOnly = isNonDegreeOnly(course);
+                    const degreeEligibility = getCourseRoleEligibility(course, activePlan);
+                    const degreeSelectable = degreeEligibility.status !== 'ineligible';
                     return (
                       <div className="designation-row" key={course.id}>
                         <button
@@ -2416,7 +3235,8 @@ export default function CourseExplorer({
                           <strong>{course.name}</strong>
                           <span>
                             {course.category} · {formatCredits(course.credits)}{' '}
-                            学分
+                            学分 · {getCourseRequirementTypeLabel(courseRequirementType(course))}
+                            {isInnovationCourse(course) ? ' · 创新创业课' : ''}
                           </span>
                         </button>
                         <div className="designation-control">
@@ -2432,13 +3252,13 @@ export default function CourseExplorer({
                             value={designation}
                           >
                             <NativeSelectOption
-                              disabled={nonDegreeOnly}
+                              disabled={!degreeSelectable}
                               value="unset"
                             >
                               未确定
                             </NativeSelectOption>
                             <NativeSelectOption
-                              disabled={nonDegreeOnly}
+                              disabled={!degreeSelectable}
                               value="degree"
                             >
                               学位课
@@ -2447,8 +3267,8 @@ export default function CourseExplorer({
                               非学位课
                             </NativeSelectOption>
                           </NativeSelect>
-                          {nonDegreeOnly && (
-                            <small>按选课须知只能作为非学位课</small>
+                          {degreeEligibility.status !== 'eligible' && (
+                            <small>{degreeEligibility.reason}</small>
                           )}
                         </div>
                       </div>
@@ -2467,6 +3287,99 @@ export default function CourseExplorer({
                   </Button>
                 </div>
               )}
+            </div>
+          </section>
+        ) : view === 'data' ? (
+          <section className="py-6">
+            <div className="section-heading mb-5">
+              <p>DATA MANAGEMENT</p>
+              <h2>数据管理</h2>
+              <div className="section-description">
+                更新课程数据、导出/恢复个人备份都在这里完成。所有数据仍只保存在当前浏览器；导入失败不会覆盖原数据。
+              </div>
+            </div>
+            {(dataManagementMessage || dataManagementError || dataMessage || dataError) && (
+              <div
+                className={`mb-4 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
+                  dataManagementError || dataError
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                }`}
+                role={dataManagementError || dataError ? 'alert' : 'status'}
+              >
+                {dataManagementError || dataError || dataManagementMessage || dataMessage}
+              </div>
+            )}
+            <div className="data-management-grid">
+              <article className="data-management-card">
+                <div className="data-management-card-head">
+                  <RefreshCw />
+                  <div>
+                    <h3>更新课程数据</h3>
+                    <p>支持课程 JSON；按课程编码尝试保留对应学期的已选记录。</p>
+                  </div>
+                </div>
+                <input
+                  accept=".json,application/json"
+                  className="sr-only"
+                  onChange={handleCourseDataImport}
+                  ref={dataFileRef}
+                  type="file"
+                />
+                <Button
+                  className="mt-4 h-10 rounded-xl"
+                  onClick={() => dataFileRef.current?.click()}
+                >
+                  选择课程数据 JSON
+                </Button>
+                <p className="data-management-note">
+                  当前应用键名使用 hias-* 命名空间；仅为兼容旧版本读取 ucas-hangzhou-selected，不会覆盖同域名下其他项目的 hias 数据。
+                </p>
+              </article>
+              <article className="data-management-card">
+                <div className="data-management-card-head">
+                  <Download />
+                  <div>
+                    <h3>备份与恢复</h3>
+                    <p>备份版本 v{BACKUP_VERSION} 包含学期课程、选课、属性、培养方案、历史记录和免修状态。</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button className="h-10 rounded-xl" onClick={exportBackup}>
+                    <Download /> 导出完整备份
+                  </Button>
+                  <input
+                    accept=".json,application/json"
+                    className="sr-only"
+                    onChange={handleBackupImport}
+                    ref={backupFileRef}
+                    type="file"
+                  />
+                  <Button
+                    className="h-10 rounded-xl"
+                    onClick={() => backupFileRef.current?.click()}
+                    variant="outline"
+                  >
+                    <RefreshCw /> 选择备份恢复
+                  </Button>
+                </div>
+                {restorePreview && (
+                  <section className="restore-preview" aria-label="确认恢复备份">
+                    <strong>恢复前预览</strong>
+                    <ul>
+                      {restorePreview.summary.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                    <div className="flex flex-wrap gap-2">
+                      <Button className="h-9 rounded-lg" onClick={applyRestore}>确认应用恢复</Button>
+                      <Button className="h-9 rounded-lg" onClick={() => setRestorePreview(null)} variant="outline">取消</Button>
+                    </div>
+                  </section>
+                )}
+              </article>
+            </div>
+            <div className="source-compare-note mt-5">
+              <ShieldCheck />
+              <span>恢复会替换备份中包含的自定义数据和个人记录；内置课程与培养方案不会被删除。无法匹配的课程记录会在备份中保留，需重新导入对应课程数据后再使用。</span>
             </div>
           </section>
         ) : view === 'notice' ? (
@@ -2508,15 +3421,13 @@ export default function CourseExplorer({
             </div>
           </section>
         ) : view === 'guide' ? (
-          <section className="py-6">
-            <div className="section-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <section className="guide-page py-6">
+            <div className="section-heading guide-heading mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <p>PROGRAM REQUIREMENTS</p>
-                <h2>培养方案参考</h2>
+                <h2>培养要求</h2>
                 <div className="section-description">
-                  {activePlan.source || '根据已整理的培养方案材料'}
-                  整理，仅显示当前课程数据中可对应的课程；可导入其他学院或学科的方案
-                  JSON。
+                  按培养方向核对已修、预选、分类缺口和待确认事项；最终认定以学校培养方案和正式审核为准。
                   {formatUpdatedAt(activePlan.updatedAt) &&
                     ` 方案更新时间：${formatUpdatedAt(activePlan.updatedAt)}。`}
                 </div>
@@ -2556,7 +3467,7 @@ export default function CourseExplorer({
 
             {(programPlanMessage || programPlanError) && (
               <div
-                className={`mb-4 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
+                className={`guide-feedback mb-4 rounded-xl border px-3 py-2.5 text-sm leading-6 ${
                   programPlanError
                     ? 'border-rose-200 bg-rose-50 text-rose-700'
                     : 'border-emerald-200 bg-emerald-50 text-emerald-700'
@@ -2567,7 +3478,159 @@ export default function CourseExplorer({
               </div>
             )}
 
-            <div className="program-hero">
+            <div className="guide-overview requirements-status-grid">
+              <div className="requirement-status-card">
+                <span>历史已修且取得</span>
+                <strong>{formatCredits(creditSummary.historicalCredits)} 学分</strong>
+                <small>只来自历史记录，不与本学期预选重复累计</small>
+              </div>
+              <div className="requirement-status-card">
+                <span>本学期预选</span>
+                <strong>{formatCredits(creditSummary.plannedCredits)} 学分</strong>
+                <small>这是计划量，不称为毕业完成度</small>
+              </div>
+              <div className="requirement-status-card">
+                <span>加入计划后的预计累计</span>
+                <strong>{formatCredits(creditSummary.estimatedCredits)} 学分</strong>
+                <small>各类别和门数仍需分别核对</small>
+              </div>
+              <div className="requirement-status-card">
+                <span>待确认学位属性</span>
+                <strong>{formatCredits(creditSummary.pendingDesignationCredits)} 学分</strong>
+                <small>{unsetDesignationCount ? '待确认后计算学位课缺口' : '当前没有待确认课程'}</small>
+              </div>
+            </div>
+
+            <div className="guide-pending designation-panel mt-5">
+              <div className="designation-panel-head">
+                <div>
+                  <p>FIRST CONFIRM COURSES</p>
+                  <h3>先确认已选课程属性</h3>
+                  <span>这是个人规划口径，不代表学校审核认定；待确认课程不会被当成完全缺课。</span>
+                </div>
+                <Badge variant="secondary">{unsetDesignationCount} 门待确认</Badge>
+              </div>
+              {unsetDesignationCount ? (
+                <div className="designation-list">
+                  {countedSelectedCourses.filter((course) => getCourseDesignation(course, activeDesignations, activePlan) === 'unset').map((course) => (
+                    <div className="designation-row" key={`pending-${course.id}`}>
+                      <button onClick={() => setDetailCourse(course)} type="button">
+                        <strong>{course.name}</strong>
+                        <span>{course.category} · {formatCredits(course.credits)} 学分 · {course.code}</span>
+                      </button>
+                      <div className="designation-radio-group" role="radiogroup" aria-label={`设置${course.name}的学位课属性`}>
+                        <label><input checked={false} disabled={getCourseRoleEligibility(course, activePlan).status === 'ineligible'} name={`pending-${course.id}`} onChange={() => setCourseDesignation(course, 'degree')} type="radio" /> 学位课</label>
+                        <label><input checked={false} name={`pending-${course.id}`} onChange={() => setCourseDesignation(course, 'non-degree')} type="radio" /> 非学位课</label>
+                        {getCourseRoleEligibility(course, activePlan).status !== 'eligible' && (
+                          <small>{getCourseRoleEligibility(course, activePlan).reason}</small>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="designation-empty-note">没有需要先确认的已选课程。已确认属性的课程仍可在“选课体检”中调整。</p>
+              )}
+            </div>
+
+            <div className="guide-records history-exemption-grid mt-5">
+              <article className="history-card">
+                <div className="designation-panel-head">
+                  <div>
+                    <p>ENGLISH EXEMPTION</p>
+                    <h3>英语免修免考资格</h3>
+                  </div>
+                  <Badge
+                    className={`english-status-badge english-status-badge-${englishStatusTone(englishExemptionStatus)}`}
+                    variant="secondary"
+                  >
+                    {englishStatusLabel(englishExemptionStatus)}
+                  </Badge>
+                </div>
+                <div className="english-guide-summary">
+                  <span>只需确认是否已获得免修免考资格；开关已移到页面顶部</span>
+                  <span>当前：{englishStatusLabel(englishExemptionStatus)}</span>
+                </div>
+                <p className="history-card-note">
+                  英语免修免考资格获得后按 3 学分计入公共必修学位课；未获得时不计入。切换状态不会静默删除已选英语课程，若历史中已有同一英语课程也不会重复计分；最终以学校审核为准。
+                </p>
+                {selectedCourses.some(isEnglishCourse) && (
+                  <p className="history-card-warning">当前预选中保留了英语课程：切换免修状态不会静默删除它。</p>
+                )}
+              </article>
+              <article className="history-card">
+                <div className="designation-panel-head">
+                  <div>
+                    <p>HISTORICAL RECORDS</p>
+                    <h3>历史已修记录</h3>
+                  </div>
+                  <Badge variant="secondary">{formatCredits(creditSummary.historicalCredits)} 学分</Badge>
+                </div>
+                <p className="history-card-note">可只录入分类学分；若没有课程名称，门数显示为“待补充”，不会推算为门数已满足。</p>
+                <div className="history-form-grid">
+                  <Input aria-label="历史学期" onChange={(event) => setHistoryDraft((current) => ({ ...current, term: event.target.value }))} placeholder="学期，如 2026 春季" value={historyDraft.term} />
+                  <Input aria-label="历史课程名称，可留空" onChange={(event) => setHistoryDraft((current) => ({ ...current, courseName: event.target.value }))} placeholder="课程名称（可留空）" value={historyDraft.courseName} />
+                  <Input aria-label="历史课程编码，可留空" onChange={(event) => setHistoryDraft((current) => ({ ...current, courseCode: event.target.value }))} placeholder="课程编码（可留空）" value={historyDraft.courseCode} />
+                  <Input aria-label="历史学分" onChange={(event) => setHistoryDraft((current) => ({ ...current, credits: event.target.value }))} placeholder="学分" type="number" value={historyDraft.credits} />
+                  <NativeSelect aria-label="历史课程类别" onChange={(event) => setHistoryDraft((current) => ({ ...current, category: event.target.value }))} value={historyDraft.category}>
+                    {['公共必修课', '公共选修课', '专业核心课', '学科核心课', '专业课', '研讨课', '实验课'].map((value) => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
+                  </NativeSelect>
+                  <NativeSelect aria-label="历史课程学位属性" onChange={(event) => setHistoryDraft((current) => ({ ...current, designation: event.target.value as HistoricalRecord['designation'] }))} value={historyDraft.designation}>
+                    <NativeSelectOption value="unknown">学位属性待核验</NativeSelectOption>
+                    <NativeSelectOption value="degree">学位课</NativeSelectOption>
+                    <NativeSelectOption value="non-degree">非学位课</NativeSelectOption>
+                  </NativeSelect>
+                </div>
+                <Button className="mt-3 h-10 rounded-xl" onClick={addHistoricalRecord}><ClipboardList /> 添加历史记录</Button>
+                {historicalRecords.length ? <div className="history-record-list mt-3">{historicalRecords.map((record) => <div key={record.id}><span>{record.courseName || '分类学分（课程待补充）'} · {record.term} · {getCourseRequirementTypeLabel(getCourseRequirementType({ code: record.courseCode, category: record.category, name: record.courseName, subject: record.subject ?? '', module: record.module === 'hias' ? 'hias' : record.module === 'innovation' ? 'innovation' : 'regular' }, record.designation, activePlan))}{record.module === 'hias' ? ` · ${record.attendanceCount ?? (record.hours ?? record.credits * 20) / 2} 次 · ${record.hours ?? record.credits * 20} 学时` : ''}</span><b>{formatCredits(record.credits)} 学分</b><button aria-label={`删除${record.courseName || record.category}历史记录`} onClick={() => setHistoricalRecords((current) => current.filter((item) => item.id !== record.id))} type="button"><X /></button></div>)}</div> : <p className="history-card-note mt-3">尚未录入历史学分。</p>}
+              </article>
+              <article className="history-card">
+                <div className="designation-panel-head">
+                  <div>
+                    <p>HIAS LECTURES</p>
+                    <h3>HIAS讲堂学分</h3>
+                  </div>
+                  <Badge variant="secondary">专业非学位课</Badge>
+                </div>
+                <p className="history-card-note">
+                  可按参加次数累计：每次 2 学时，20 学时折算 1 学分。这里的学分计入专业非学位课，不计入学位课门数。
+                </p>
+                <div className="history-form-grid">
+                  <Input
+                    aria-label="HIAS讲堂学期"
+                    onChange={(event) =>
+                      setHiasDraft((current) => ({ ...current, term: event.target.value }))
+                    }
+                    placeholder="学期，如 2026 春季"
+                    value={hiasDraft.term}
+                  />
+                  <Input
+                    aria-label="HIAS讲堂参加次数"
+                    min="1"
+                    onChange={(event) =>
+                      setHiasDraft((current) => ({
+                        ...current,
+                        attendanceCount: event.target.value,
+                      }))
+                    }
+                    placeholder="参加次数"
+                    type="number"
+                    value={hiasDraft.attendanceCount}
+                  />
+                </div>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
+                  本次换算：{hiasPreview ? `${hiasPreview.hours} 学时 = ${formatCredits(hiasPreview.credits)} 学分` : '填写参加次数后自动换算'}
+                </div>
+                <Button className="mt-3 h-10 rounded-xl" onClick={addHiasRecord}>
+                  <ClipboardList /> 添加 HIAS 讲堂记录
+                </Button>
+                <p className="history-card-note mt-3">
+                  已累计：{hiasHistorySummary.attendanceCount} 次 · {hiasHistorySummary.hours} 学时 · {formatCredits(hiasHistorySummary.credits)} 学分
+                </p>
+              </article>
+            </div>
+
+            <div className="guide-plan-summary program-hero">
               <div>
                 <span>{activePlan.degree}</span>
                 <h3>{activePlan.program}</h3>
@@ -2578,42 +3641,83 @@ export default function CourseExplorer({
                 <span>毕业总学分</span>
               </div>
               <div className="program-selected-total">
-                <strong>{formatCredits(selectedPlanCredits)}</strong>
-                <span>本学期已选方案课学分</span>
+                <strong>{formatCredits(creditSummary.estimatedCredits)}</strong>
+                <span>加入计划后的预计累计</span>
               </div>
             </div>
 
-            <div className="requirement-grid mt-4">
-              {[
-                [
-                  '公共必修课',
-                  activePlan.publicRequiredCredits === null
-                    ? '材料未明确'
-                    : `${activePlan.publicRequiredCredits} 学分`,
-                ],
-                ['专业学位课', `≥${activePlan.degreeCourseCredits} 学分`],
-                [
-                  '专业非学位课',
-                  activePlan.professionalNonDegreeCredits === null
-                    ? '不限'
-                    : `${activePlan.professionalNonDegreeCredits} 学分`,
-                ],
-                ['公共选修课', `${activePlan.publicElectiveCredits} 学分`],
-                [
-                  '创新创业课',
-                  activePlan.innovationCredits === null
-                    ? '未单列'
-                    : `${activePlan.innovationCredits} 学分`,
-                ],
-              ].map(([label, value]) => (
-                <div className="requirement-item" key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+            <div className="guide-progress mt-5">
+              <div className="section-description">
+                各项显示“当前已计入学分 / 培养方案要求”；“必修”与“学位课”分别判断，待核验项目不会自动判定为已满足。
+              </div>
+              <div
+                className={`english-requirement-callout english-status-banner-${englishStatusTone(englishExemptionStatus)}`}
+                role="status"
+              >
+                <div>
+                  <span>英语免修免考对培养要求的影响</span>
+                  <strong>
+                    {englishExemptionStatus === 'approved'
+                      ? `已获得 · +${formatCredits(englishQualificationCredits)} 学分`
+                      : '未获得 · 0 学分'}
+                  </strong>
                 </div>
-              ))}
+                <small>{englishQualificationDetail}</small>
+              </div>
+              <div className="requirement-grid mt-3">
+                {[
+                  [
+                    '公共必修学位课',
+                    formatRequirementProgress(
+                      creditSummary.publicRequiredDegreeCredits,
+                      publicRequiredDegreeTarget,
+                    ),
+                  ],
+                  [
+                    '专业学位课',
+                    formatRequirementProgress(
+                      creditSummary.professionalDegreeCredits,
+                      activePlan.degreeCourseCredits,
+                    ),
+                  ],
+                  [
+                    '专业选修课',
+                    formatRequirementProgress(
+                      creditSummary.professionalElectiveCredits,
+                      activePlan.professionalNonDegreeCredits,
+                    ),
+                  ],
+                  [
+                    '公共选修课',
+                    formatRequirementProgress(
+                      creditSummary.publicElectiveCredits,
+                      publicElectiveTarget,
+                    ),
+                  ],
+                  [
+                    '公共必修非学位课',
+                    formatRequirementProgress(
+                      creditSummary.publicRequiredNonDegreeCredits,
+                      publicRequiredNonDegreeTarget,
+                    ),
+                  ],
+                  [
+                    '其中：创新创业课',
+                    formatRequirementProgress(
+                      creditSummary.innovationCredits,
+                      activePlan.innovationCredits,
+                    ),
+                  ],
+                ].map(([label, value]) => (
+                  <div className="requirement-item" key={`progress-${label}`}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="selection-rules mt-4">
+            <div className="guide-coverage selection-rules mt-4">
               <div className="rule-card">
                 <Target />
                 <div>
@@ -2650,7 +3754,7 @@ export default function CourseExplorer({
               </div>
             </div>
 
-            <div className="coverage-note mt-4">
+            <div className="guide-note coverage-note mt-4">
               <Info />
               <span>
                 这里统计的是本学期已选课程对培养方案课程库的覆盖情况，不代表课程已经被认定为学位课，也不等同于毕业完成度。
@@ -2658,12 +3762,12 @@ export default function CourseExplorer({
             </div>
 
             {activePlan.note && (
-              <div className="program-note mt-4">
+              <div className="guide-note program-note mt-4">
                 <Info /> {activePlan.note}
               </div>
             )}
 
-            <div className="mt-7 grid gap-5 xl:grid-cols-2">
+            <div className="guide-course-library mt-7 grid gap-5 xl:grid-cols-2">
               {programCourseGroups.map(({ title, courses, kind }) => (
                 <div className="program-course-group" key={title}>
                   <div className="program-course-group-title">
@@ -2729,13 +3833,18 @@ export default function CourseExplorer({
               ))}
             </div>
 
-            <div className="source-compare-note mt-5">
+            <div className="guide-source source-compare-note mt-5">
               <Info />
               <span>
                 培养要求与课程库依据{' '}
-                {activePlan.source || '已整理的培养方案材料'}；
-                本学期课程的学分、教师、时间和教室仍以当前课程数据为准。
-                {activePlan.program === '物理电子学' &&
+                 {activePlan.source || '已整理的培养方案材料'}；
+                 本学期课程的学分、教师、时间和教室仍以当前课程数据为准。
+                 课程属性规则按课程编号第14位解释：1/2为核心课、3为专业课、4-7为强制非学位课、B/X为公共课程；无法解析的编码显示为待核验。
+                 {` ${getGraduateProgramScopeLabel(activePlan)}`}
+                 课程类别、培养要求分类和学位属性分开保存；《工程伦理》按公共必修非学位课统计，不计入学位课程。
+                 创新创业课程编码依据“2026创新创业课秋季课表.xlsx”标记为“创新创业课”模块，仍按公共选修课归属，学分只累计一次。
+                 HIAS讲堂可由用户按参加次数登记，每次2学时、20学时折算1学分，计入专业非学位课。
+                 {activePlan.program === '物理电子学' &&
                   ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
               </span>
             </div>
@@ -2966,6 +4075,95 @@ export default function CourseExplorer({
         </footer>
       </div>
 
+      <Dialog
+        onOpenChange={setRecommendationDialogOpen}
+        open={recommendationDialogOpen}
+      >
+        <DialogContent className="recommendation-dialog max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>选课补充建议</DialogTitle>
+            <DialogDescription>
+              {semesterCreditGap > 0
+                ? `当前有效选课学分为 ${formatCredits(semesterEligibleCredits)}，秋季/春季建议达到 10 学分，还差 ${formatCredits(semesterCreditGap)} 学分。`
+                : '本学期有效选课学分已达到 10 学分，以下建议仅用于补充培养方案缺口。'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {recommendationCandidates.length ? (
+            <div className="recommendation-dialog-list">
+              {recommendationCandidates.map(({ course, reasons }) => (
+                <div className="recommendation-row" key={course.id}>
+                  <button
+                    onClick={() => {
+                      setRecommendationDialogOpen(false);
+                      setDetailCourse(course);
+                    }}
+                    type="button"
+                  >
+                    <strong>{course.name}</strong>
+                    <span>
+                      {course.category} · {formatCredits(course.credits)} 学分 ·{' '}
+                      {course.schedules[0]?.periodText || '时间待定'}
+                    </span>
+                    <small>{reasons.slice(0, 2).join('；')}</small>
+                  </button>
+                  <Button
+                    className="h-9 shrink-0 rounded-lg"
+                    onClick={() => {
+                      setRecommendationDialogOpen(false);
+                      toggleCourse(course.id, { prompt: false });
+                    }}
+                    size="sm"
+                  >
+                    加入
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="recommendation-empty">
+              当前没有找到符合培养要求且不与现有课表冲突的补充课程。
+            </div>
+          )}
+
+          {recommendationCombination.length > 1 && (
+            <div className="recommendation-dialog-combination">
+              <div>
+                <strong>可一起加入的组合</strong>
+                <span>
+                  已按教学周、星期、节次和同课不同班规则检查；加入后会再次实时检查课表。
+                </span>
+              </div>
+              <div className="combination-course-list">
+                {recommendationCombination.map((course) => (
+                  <span key={course.id}>{course.name}</span>
+                ))}
+              </div>
+              <Button
+                className="mt-3 h-10 rounded-xl"
+                onClick={() => {
+                  setRecommendationDialogOpen(false);
+                  recommendationCombination.forEach((course) =>
+                    toggleCourse(course.id, { prompt: false }),
+                  );
+                }}
+              >
+                加入这组课程
+              </Button>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              onClick={() => setRecommendationDialogOpen(false)}
+              variant="outline"
+            >
+              稍后查看
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Sheet
         onOpenChange={(open) => {
           if (!open) setDetailCourse(null);
@@ -2983,6 +4181,22 @@ export default function CourseExplorer({
                   >
                     {detailCourse.category}
                   </Badge>
+                  <Badge className="bg-teal-50 text-teal-700" variant="secondary">
+                    {getCourseRequirementTypeLabel(
+                      getCourseRequirementType(
+                        detailCourse,
+                        selectedIds.includes(detailCourse.id)
+                          ? courseDesignation(detailCourse)
+                          : getCourseDesignation(detailCourse, {}, activePlan),
+                        activePlan,
+                      ),
+                    )}
+                  </Badge>
+                  {isInnovationCourse(detailCourse) && (
+                    <Badge className="bg-fuchsia-50 text-fuchsia-700" variant="secondary">
+                      创新创业课
+                    </Badge>
+                  )}
                   <Badge variant="outline">{detailCourse.level}</Badge>
                   <Badge className="source-badge" variant="secondary">
                     <FileSpreadsheet /> 秋季课表数据
@@ -2999,6 +4213,26 @@ export default function CourseExplorer({
                 <div className="grid grid-cols-2 gap-3">
                   {[
                     ['课程编码', detailCourse.code],
+                    [
+                      '编号第14位规则',
+                      `${getCourseCodeMarker(detailCourse.code) || '待核验'} · ${getCourseCodeCategoryLabel(detailCourse.code)}`,
+                    ],
+                    [
+                      '培养要求分类',
+                      getCourseRequirementTypeLabel(
+                        getCourseRequirementType(
+                          detailCourse,
+                          selectedIds.includes(detailCourse.id)
+                            ? courseDesignation(detailCourse)
+                            : getCourseDesignation(detailCourse, {}, activePlan),
+                          activePlan,
+                        ),
+                      ),
+                    ],
+                    [
+                      '课程模块',
+                      isInnovationCourse(detailCourse) ? '创新创业课' : '常规课程',
+                    ],
                     [
                       '学分 / 学时',
                       `${formatCredits(detailCourse.credits)} / ${detailCourse.hours}`,
@@ -3060,13 +4294,13 @@ export default function CourseExplorer({
                         value={courseDesignation(detailCourse)}
                       >
                         <NativeSelectOption
-                          disabled={isNonDegreeOnly(detailCourse)}
+                          disabled={getCourseRoleEligibility(detailCourse, activePlan).status === 'ineligible'}
                           value="unset"
                         >
                           未确定
                         </NativeSelectOption>
                         <NativeSelectOption
-                          disabled={isNonDegreeOnly(detailCourse)}
+                          disabled={getCourseRoleEligibility(detailCourse, activePlan).status === 'ineligible'}
                           value="degree"
                         >
                           学位课
@@ -3076,9 +4310,9 @@ export default function CourseExplorer({
                         </NativeSelectOption>
                       </NativeSelect>
                     </label>
-                    {isNonDegreeOnly(detailCourse) && (
+                    {getCourseRoleEligibility(detailCourse, activePlan).status !== 'eligible' && (
                       <p className="mt-2 text-xs leading-5 text-amber-700">
-                        该课程按选课须知只能作为非学位课修读。
+                        {getCourseRoleEligibility(detailCourse, activePlan).reason}
                       </p>
                     )}
                   </div>

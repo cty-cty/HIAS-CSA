@@ -6,6 +6,9 @@ export type ProgramPlan = {
   code: string;
   totalCredits: number;
   publicRequiredCredits: number | null;
+  publicRequiredDegreeCredits?: number | null;
+  publicRequiredNonDegreeCredits?: number | null;
+  requiredPublicRequiredNonDegreeCourses?: string[];
   degreeCourseCredits: number;
   professionalNonDegreeCredits: number | null;
   publicElectiveCredits: number;
@@ -46,6 +49,9 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     code: '0809 电子科学与技术',
     totalCredits: 30,
     publicRequiredCredits: 7,
+    publicRequiredDegreeCredits: 7,
+    publicRequiredNonDegreeCredits: 0,
+    requiredPublicRequiredNonDegreeCourses: [],
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: null,
     publicElectiveCredits: 2,
@@ -63,6 +69,9 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     code: '085408 光电信息工程',
     totalCredits: 25,
     publicRequiredCredits: 8,
+    publicRequiredDegreeCredits: 7,
+    publicRequiredNonDegreeCredits: 1,
+    requiredPublicRequiredNonDegreeCourses: ['工程伦理'],
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: 2,
     publicElectiveCredits: 2,
@@ -99,6 +108,9 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     code: '085410 人工智能',
     totalCredits: 25,
     publicRequiredCredits: 8,
+    publicRequiredDegreeCredits: 7,
+    publicRequiredNonDegreeCredits: 1,
+    requiredPublicRequiredNonDegreeCourses: ['工程伦理'],
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: 2,
     publicElectiveCredits: 2,
@@ -122,6 +134,9 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     code: '085601 材料工程',
     totalCredits: 25,
     publicRequiredCredits: 8,
+    publicRequiredDegreeCredits: 7,
+    publicRequiredNonDegreeCredits: 1,
+    requiredPublicRequiredNonDegreeCourses: ['工程伦理'],
     degreeCourseCredits: 12,
     professionalNonDegreeCredits: 2,
     publicElectiveCredits: 2,
@@ -153,6 +168,9 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     code: '0809 电子科学与技术',
     totalCredits: 38,
     publicRequiredCredits: 11,
+    publicRequiredDegreeCredits: 11,
+    publicRequiredNonDegreeCredits: 0,
+    requiredPublicRequiredNonDegreeCourses: [],
     degreeCourseCredits: 16,
     professionalNonDegreeCredits: null,
     publicElectiveCredits: 2,

@@ -304,6 +304,193 @@ button {
   color: #84958f;
 }
 
+.english-status-compact {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  border: 1px solid #d7e6f4;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 0.3rem 0.4rem;
+}
+
+.english-status-compact-title {
+  padding: 0 0.28rem 0 0.15rem;
+  color: #496b83;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.english-status-toggle {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.28rem;
+  border: 1px solid #dce9e3;
+  border-radius: 9px;
+  background: #f7fbf9;
+  padding: 0.28rem 0.55rem;
+  color: #607487;
+  font-size: 0.72rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.english-status-toggle input {
+  accent-color: #2f8272;
+}
+
+.english-status-toggle:has(input:checked) {
+  border-color: #beded3;
+  background: #eef8f4;
+  color: #236c5d;
+  font-weight: 700;
+}
+
+.english-status-badge {
+  border: 1px solid transparent;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.english-status-badge-not-qualified {
+  border-color: #cfe2f2;
+  background: #f0f7fc;
+  color: #346480;
+}
+
+.english-status-badge-approved {
+  border-color: #b9dfd2;
+  background: #eaf8f2;
+  color: #24725f;
+}
+
+.english-status-top-badge {
+  min-height: 2.75rem;
+  border-radius: 12px;
+  padding: 0 0.75rem;
+}
+
+.english-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  margin-bottom: 0.8rem;
+  border: 1px solid;
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+}
+
+.english-status-banner-approved {
+  border-color: #9ed7c8;
+  background: linear-gradient(110deg, #e8f8f1, #f5fbf8);
+  color: #216c5b;
+}
+
+.english-status-banner-not-qualified {
+  border-color: #d8e3e8;
+  background: linear-gradient(110deg, #f2f7fa, #fafcfb);
+  color: #486675;
+}
+
+.english-status-banner-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.english-status-banner-main > svg {
+  width: 1.25rem;
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+.english-status-banner-main div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.english-status-banner-main strong {
+  font-size: 0.9rem;
+}
+
+.english-status-banner-main span {
+  color: currentColor;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  opacity: 0.84;
+}
+
+.english-status-banner-credit {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.36rem 0.58rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.english-requirement-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+  border: 1px solid;
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+}
+
+.english-requirement-callout > div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.english-requirement-callout span {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.english-requirement-callout strong {
+  font-size: 0.92rem;
+}
+
+.english-requirement-callout small {
+  max-width: 54rem;
+  color: currentColor;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  opacity: 0.82;
+}
+
+.english-guide-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border: 1px solid #dce8e3;
+  border-radius: 10px;
+  background: #f7fbf9;
+  padding: 0.55rem 0.65rem;
+  color: #6f817b;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.english-guide-summary span:last-child {
+  color: #2f6e60;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .filter-chip {
   height: 2.25rem;
   border-radius: 0.65rem;
@@ -1495,6 +1682,427 @@ button {
   font-size: 0.72rem;
 }
 
+.hero-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+  color: #71807c;
+  font-size: 0.7rem;
+}
+
+.hero-summary-grid span {
+  border: 1px solid #e4ebe6;
+  border-radius: 9px;
+  background: #f7faf8;
+  padding: 0.42rem 0.5rem;
+}
+
+.hero-summary-grid b {
+  color: #2f5e53;
+  font-size: 0.82rem;
+}
+
+.requirements-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.1rem;
+}
+
+.guide-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.guide-page > .guide-heading {
+  order: 1;
+}
+
+.guide-page > .guide-feedback {
+  order: 2;
+}
+
+.guide-page > .guide-overview {
+  order: 3;
+}
+
+.guide-page > .guide-pending {
+  order: 4;
+}
+
+.guide-page > .guide-plan-summary {
+  order: 5;
+}
+
+.guide-page > .guide-progress {
+  order: 6;
+}
+
+.guide-page > .guide-coverage {
+  order: 7;
+}
+
+.guide-page > .guide-note {
+  order: 8;
+}
+
+.guide-page > .guide-records {
+  order: 9;
+}
+
+.guide-page > .guide-course-library {
+}
+
+.guide-page > .guide-source {
+  order: 12;
+}
+
+.guide-plan-summary {
+  margin-top: 1.25rem;
+}
+
+.guide-progress {
+  border-top: 1px solid #e6eee9;
+  padding-top: 1.1rem;
+}
+
+.guide-progress > .section-description {
+  color: #60736c;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.guide-records,
+.guide-course-library,
+.guide-source {
+  position: relative;
+}
+
+.guide-records::before,
+.guide-course-library::before {
+  display: block;
+  margin: 0 0 0.65rem;
+  color: #84958e;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.guide-records::before {
+  content: '记录与免修';
+  grid-column: 1 / -1;
+}
+
+.guide-course-library::before {
+  content: '培养方案课程库';
+  grid-column: 1 / -1;
+}
+
+.requirement-status-card,
+.history-card,
+.recommendation-panel,
+.data-management-card {
+  border: 1px solid #dfe7e3;
+  border-radius: 18px;
+  background: #fff;
+  padding: 1rem;
+  box-shadow: 0 8px 24px rgba(44, 72, 64, 0.035);
+}
+
+.requirement-status-card {
+  display: flex;
+  min-height: 7rem;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.requirement-status-card span,
+.requirement-status-card small {
+  color: #7f908a;
+  font-size: 0.75rem;
+}
+
+.requirement-status-card strong {
+  color: #2f5e53;
+  font-size: 1.3rem;
+}
+
+.requirement-status-card small {
+  margin-top: auto;
+  line-height: 1.45;
+}
+
+.designation-radio-group,
+.status-radio-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.designation-radio-group label,
+.status-radio-grid label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #dce6e1;
+  border-radius: 999px;
+  background: #f9fbfa;
+  padding: 0.45rem 0.65rem;
+  color: #536b64;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.designation-radio-group input,
+.status-radio-grid input {
+  accent-color: #2f8272;
+}
+
+.designation-empty-note,
+.history-card-note,
+.data-management-note,
+.recommendation-empty {
+  color: #7f8e89;
+  font-size: 0.78rem;
+  line-height: 1.65;
+}
+
+.history-exemption-grid,
+.data-management-grid,
+.recommendation-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.history-card .designation-panel-head,
+.data-management-card-head {
+  margin-bottom: 0.7rem;
+}
+
+.history-card-warning {
+  margin-top: 0.75rem;
+  border-radius: 10px;
+  background: #fff7e6;
+  padding: 0.6rem 0.7rem;
+  color: #96651f;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.history-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.history-record-list {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.history-record-list > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  border-top: 1px dashed #e3ebe7;
+  padding-top: 0.45rem;
+  color: #60736c;
+  font-size: 0.74rem;
+}
+
+.history-record-list b {
+  color: #2f5e53;
+}
+
+.history-record-list button {
+  display: grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  border-radius: 0.5rem;
+  color: #a27676;
+}
+
+.history-record-list button:hover {
+  background: #fff1f1;
+}
+
+.history-record-list svg {
+  width: 0.85rem;
+}
+
+.recommendation-panel {
+  background: linear-gradient(135deg, #f7fbf8, #fff);
+}
+
+.recommendation-dialog-list {
+  display: grid;
+  max-height: min(52vh, 31rem);
+  gap: 0.45rem;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.recommendation-dialog-combination {
+  border: 1px solid #dce9e2;
+  border-radius: 14px;
+  background: #f7fbf8;
+  padding: 0.8rem;
+}
+
+.recommendation-dialog-combination > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.recommendation-dialog-combination strong {
+  color: #355d50;
+  font-size: 0.82rem;
+}
+
+.recommendation-dialog-combination span {
+  color: #74867f;
+  font-size: 0.74rem;
+  line-height: 1.55;
+}
+
+.recommendation-layout {
+  align-items: start;
+  margin-top: 0.75rem;
+}
+
+.recommendation-layout h4 {
+  color: #42645a;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.recommendation-list {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.5rem;
+}
+
+.recommendation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid #e0e9e4;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.65rem;
+}
+
+.recommendation-row > button:first-child {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.recommendation-row strong {
+  color: #334f47;
+  font-size: 0.8rem;
+}
+
+.recommendation-row span,
+.recommendation-row small {
+  margin-top: 0.18rem;
+  color: #87968f;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.recommendation-row small {
+  color: #4d7b6c;
+}
+
+.recommendation-combination {
+  border: 1px solid #d8e9df;
+  border-radius: 14px;
+  background: #f4faf6;
+  padding: 0.9rem;
+}
+
+.recommendation-combination p {
+  margin-top: 0.4rem;
+  color: #789087;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.combination-course-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+
+.combination-course-list span {
+  border-radius: 999px;
+  background: #e1f1e8;
+  padding: 0.35rem 0.5rem;
+  color: #3f6d5a;
+  font-size: 0.7rem;
+}
+
+.data-management-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.data-management-card-head {
+  display: flex;
+  gap: 0.65rem;
+  color: #2e7768;
+}
+
+.data-management-card-head svg {
+  width: 1.2rem;
+  flex: 0 0 auto;
+}
+
+.data-management-card-head h3 {
+  color: #35584f;
+  font-size: 0.94rem;
+  font-weight: 750;
+}
+
+.data-management-card-head p {
+  margin-top: 0.2rem;
+  color: #7d8e87;
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
+.data-management-note {
+  margin-top: 0.8rem;
+  border-top: 1px dashed #e1e9e5;
+  padding-top: 0.7rem;
+}
+
+.restore-preview {
+  margin-top: 0.9rem;
+  border: 1px solid #e5d6ad;
+  border-radius: 12px;
+  background: #fffaf0;
+  padding: 0.75rem;
+  color: #725d32;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.restore-preview ul {
+  margin: 0.35rem 0 0.7rem 1rem;
+  list-style: disc;
+}
+
 .program-course-list {
   display: grid;
   gap: 1px;
@@ -1835,7 +2443,8 @@ button {
   }
 
   .checkup-grid,
-  .notice-grid {
+  .notice-grid,
+  .requirements-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1846,7 +2455,11 @@ button {
   }
 
   .checkup-grid,
-  .notice-grid {
+  .notice-grid,
+  .requirements-status-grid,
+  .history-exemption-grid,
+  .data-management-grid,
+  .recommendation-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1883,6 +2496,40 @@ button {
   .designation-empty {
     align-items: flex-start;
     flex-wrap: wrap;
+  }
+
+  .history-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .english-status-compact {
+    width: 100%;
+  }
+
+  .english-status-top-badge {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .english-status-banner,
+  .english-requirement-callout {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .english-status-banner-credit {
+    align-self: stretch;
+    text-align: center;
+  }
+
+  .english-guide-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .recommendation-row {
+    align-items: flex-start;
   }
 }
 
