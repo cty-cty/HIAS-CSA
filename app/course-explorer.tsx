@@ -1881,7 +1881,7 @@ export default function CourseExplorer({
 
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return initialCourses.filter((course) => {
+    const matches = initialCourses.filter((course) => {
       const matchesQuery =
         !normalized ||
         [
@@ -1923,7 +1923,50 @@ export default function CourseExplorer({
         matchesConflict
       );
     });
+    const coreOrder = new Map(
+      activePlan.coreCourses.map((name, index) => [name, index]),
+    );
+    const professionalOrder = new Map(
+      activePlan.professionalCourses.map((name, index) => [name, index]),
+    );
+    const priority = (course: Course) => {
+      const coreIndex = coreOrder.get(course.name);
+      if (coreIndex !== undefined) return [0, coreIndex];
+      const professionalIndex = professionalOrder.get(course.name);
+      if (professionalIndex !== undefined) return [1, professionalIndex];
+      const requirementType = getCourseRequirementType(
+        course,
+        getCourseDesignation(course, activeDesignations, activePlan),
+        activePlan,
+      );
+      const group =
+        requirementType === 'publicRequiredDegree' ||
+        requirementType === 'publicRequiredNonDegree'
+          ? 2
+          : requirementType === 'professionalElective'
+            ? 3
+            : requirementType === 'publicElective'
+              ? 4
+              : 5;
+      return [group, Number.MAX_SAFE_INTEGER];
+    };
+    return matches
+      .map((course, sourceIndex) => ({ course, sourceIndex }))
+      .sort((left, right) => {
+        const [leftGroup, leftOrder] = priority(left.course);
+        const [rightGroup, rightOrder] = priority(right.course);
+        return (
+          leftGroup - rightGroup ||
+          leftOrder - rightOrder ||
+          left.course.name.localeCompare(right.course.name, 'zh-CN') ||
+          left.course.code.localeCompare(right.course.code) ||
+          left.sourceIndex - right.sourceIndex
+        );
+      })
+      .map(({ course }) => course);
   }, [
+    activeDesignations,
+    activePlan,
     initialCourses,
     query,
     college,
@@ -2897,6 +2940,11 @@ export default function CourseExplorer({
                           ? '查看已选安排，点击课程名称核对详情。'
                           : '按课程、教师或上课时间查找，加入你的模拟课表。'}
                       </div>
+                      {!onlySelected && (
+                        <div className="mt-1 text-sm text-slate-500">
+                          当前按培养计划排序：核心课 → 专业课 → 公共必修 → 选修
+                        </div>
+                      )}
                     </div>
                     <p className="text-sm text-slate-500">
                       已显示 {Math.min(visibleCount, filteredCourses.length)} /{' '}
