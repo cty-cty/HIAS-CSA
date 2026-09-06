@@ -30,7 +30,10 @@ export type CourseLike = {
   degreeRole?: DegreeRole;
 };
 
-export type DegreeEligibilityStatus = 'eligible' | 'verification' | 'ineligible';
+export type DegreeEligibilityStatus =
+  | 'eligible'
+  | 'verification'
+  | 'ineligible';
 
 export type DegreeEligibility = {
   status: DegreeEligibilityStatus;
@@ -124,9 +127,7 @@ export function getCourseRequirementTypeLabel(
   return COURSE_REQUIREMENT_TYPE_LABELS[requirementType];
 }
 
-export function isEngineeringEthics(
-  course: Pick<CourseLike, 'name'>,
-) {
+export function isEngineeringEthics(course: Pick<CourseLike, 'name'>) {
   return course.name.replace(/[-—－]?\d+班$/, '') === '工程伦理';
 }
 
@@ -174,7 +175,8 @@ export function isCoreDegreeType(
   course: Pick<CourseLike, 'code' | 'category'>,
 ) {
   const codeCategory = getCourseCodeCategory(course.code);
-  if (codeCategory !== 'unknown') return CORE_CODE_CATEGORIES.includes(codeCategory);
+  if (codeCategory !== 'unknown')
+    return CORE_CODE_CATEGORIES.includes(codeCategory);
   return ['学科核心课', '专业核心课'].includes(course.category);
 }
 
@@ -258,10 +260,7 @@ export function isCourseEligibleAsDegree(
 }
 
 export function getCourseRoleEligibility(
-  course: Pick<
-    CourseLike,
-    'code' | 'category' | 'name' | 'subject' | 'module'
-  >,
+  course: Pick<CourseLike, 'code' | 'category' | 'name' | 'subject' | 'module'>,
   plan?: ProgramPlan,
 ): DegreeEligibility {
   if (isEngineeringEthics(course)) {
@@ -279,13 +278,15 @@ export function getCourseRoleEligibility(
   if (isPublicRequiredCourse(course)) {
     return {
       status: 'eligible',
-      reason: '公共必修课可按培养方案归入公共必修学位课；特殊课程以明确规则为准。',
+      reason:
+        '公共必修课可按培养方案归入公共必修学位课；特殊课程以明确规则为准。',
     };
   }
   if (isPublicElectiveCourse(course) || isNonDegreeOnly(course)) {
     return {
       status: 'ineligible',
-      reason: '公共选修课、研讨课、实验课、实践课和科学前沿讲座属于非学位课程。',
+      reason:
+        '公共选修课、研讨课、实验课、实践课和科学前沿讲座属于非学位课程。',
     };
   }
   return getDegreeEligibility(course, plan);
@@ -365,9 +366,7 @@ function normalizeCourseCode(code: string) {
   return code.trim().toUpperCase().replace(/-\d+$/, '');
 }
 
-export function isInnovationCourse(
-  course: Pick<CourseLike, 'code' | 'name'>,
-) {
+export function isInnovationCourse(course: Pick<CourseLike, 'code' | 'name'>) {
   return (
     INNOVATION_COURSE_CODES.has(normalizeCourseCode(course.code)) ||
     INNOVATION_COURSE_NAMES.has(courseBaseName(course.name))
@@ -405,15 +404,13 @@ export function isNonDegreeOnly(
     ['seminar', 'lab', 'practice', 'frontier-lecture'].includes(codeCategory) ||
     (codeCategory === 'unknown' &&
       NON_DEGREE_ONLY_CATEGORIES.has(course.category)) ||
-    isHiasCourse(course) || /科学前沿讲座/.test(course.name)
+    isHiasCourse(course) ||
+    /科学前沿讲座/.test(course.name)
   );
 }
 
 export function getCourseDesignation(
-  course: Pick<
-    CourseLike,
-    'code' | 'category' | 'name' | 'subject' | 'module'
-  >,
+  course: Pick<CourseLike, 'code' | 'category' | 'name' | 'subject' | 'module'>,
   designations: Record<string, CourseDesignation>,
   plan?: ProgramPlan,
 ) {
@@ -437,17 +434,11 @@ export function getCourseDesignation(
   ) {
     return 'non-degree';
   }
-  return (
-    stored ||
-    (isNonDegreeOnly(course) ? 'non-degree' : 'unset')
-  );
+  return stored || (isNonDegreeOnly(course) ? 'non-degree' : 'unset');
 }
 
 export function getCourseRequirementType(
-  course: Pick<
-    CourseLike,
-    'code' | 'category' | 'name' | 'subject' | 'module'
-  >,
+  course: Pick<CourseLike, 'code' | 'category' | 'name' | 'subject' | 'module'>,
   designation: CourseDesignation | 'unknown',
   plan?: ProgramPlan,
 ): CourseRequirementType {
@@ -481,18 +472,11 @@ export function getCourseRequirementType(
 }
 
 export function classifyCourseRequirement(
-  course: Pick<
-    CourseLike,
-    'code' | 'category' | 'name' | 'subject' | 'module'
-  >,
+  course: Pick<CourseLike, 'code' | 'category' | 'name' | 'subject' | 'module'>,
   designation: CourseDesignation | 'unknown',
   plan?: ProgramPlan,
 ): CourseClassification {
-  const requirementType = getCourseRequirementType(
-    course,
-    designation,
-    plan,
-  );
+  const requirementType = getCourseRequirementType(course, designation, plan);
   return {
     requirementType,
     degreeRole:
@@ -542,6 +526,30 @@ function sumCredits(records: Array<{ credits: number }>) {
   return records.reduce((sum, record) => sum + record.credits, 0);
 }
 
+/**
+ * 历史记录允许手动录入，也兼容旧版备份，因此同一课程可能出现多条记录。
+ * 同一课程编码只计一次；没有课程编码的记录无法安全判断重复，继续保留。
+ * HIAS 讲堂是按参加次数累计的特殊记录，不能按固定编码去重。
+ */
+function dedupeHistoricalRecords(records: HistoricalRecord[]) {
+  const seenCourseCodes = new Set<string>();
+  return records.filter((record) => {
+    if (
+      !record.credits ||
+      isHiasCourse({
+        name: record.courseName,
+        module: record.module === 'hias' ? 'hias' : undefined,
+      })
+    )
+      return true;
+    const code = normalizeCourseCode(record.courseCode);
+    if (!code) return true;
+    if (seenCourseCodes.has(code)) return false;
+    seenCourseCodes.add(code);
+    return true;
+  });
+}
+
 function addCategoryCredits(
   target: Record<string, number>,
   category: string,
@@ -587,21 +595,21 @@ export function calculateCreditSummary({
   exemptionStatus: ExemptionStatus;
   plan?: ProgramPlan;
 }): CreditSummary {
-  const completedHistory = historicalRecords.filter(
-    (record) => record.credits > 0,
+  const completedHistory = dedupeHistoricalRecords(
+    historicalRecords.filter((record) => record.credits > 0),
   );
   const historicalCourseCodes = new Set(
     completedHistory
-      .map((record) => record.courseCode.trim())
+      .map((record) => normalizeCourseCode(record.courseCode))
       .filter(Boolean),
   );
-  const duplicateSelected = selectedCourses.filter(
-    (course) => historicalCourseCodes.has(course.code.trim()),
+  const duplicateSelected = selectedCourses.filter((course) =>
+    historicalCourseCodes.has(normalizeCourseCode(course.code)),
   );
   const countedSelected = selectedCourses.filter(
     (course) =>
       !(exemptionStatus === 'approved' && isEnglishCourse(course)) &&
-      !historicalCourseCodes.has(course.code.trim()),
+      !historicalCourseCodes.has(normalizeCourseCode(course.code)),
   );
   const historicalCategoryCredits: Record<string, number> = {};
   completedHistory.forEach((record) =>
@@ -615,15 +623,14 @@ export function calculateCreditSummary({
   countedSelected.forEach((course) =>
     addCategoryCredits(plannedCategoryCredits, course.category, course.credits),
   );
-  const historicalRequirementCredits: Record<CourseRequirementType, number> =
-    {
-      publicRequiredDegree: 0,
-      professionalDegree: 0,
-      professionalElective: 0,
-      publicElective: 0,
-      publicRequiredNonDegree: 0,
-      pending: 0,
-    };
+  const historicalRequirementCredits: Record<CourseRequirementType, number> = {
+    publicRequiredDegree: 0,
+    professionalDegree: 0,
+    professionalElective: 0,
+    publicElective: 0,
+    publicRequiredNonDegree: 0,
+    pending: 0,
+  };
   const plannedRequirementCredits: Record<CourseRequirementType, number> = {
     publicRequiredDegree: 0,
     professionalDegree: 0,
@@ -669,9 +676,7 @@ export function calculateCreditSummary({
   );
 
   const historicalEnglishCredits = sumCredits(
-    completedHistory.filter((record) =>
-      /050200MB001/i.test(record.courseCode),
-    ),
+    completedHistory.filter((record) => /050200MB001/i.test(record.courseCode)),
   );
   const hasHistoricalEnglish = historicalEnglishCredits > 0;
   const approvedExemptionCredits =
@@ -728,14 +733,16 @@ export function calculateCreditSummary({
     duplicatePlannedCourseCount: duplicateSelected.length,
     pendingDesignationCredits: sumCredits(
       countedSelected.filter(
-        (course) => getCourseDesignation(course, designations, plan) === 'unset',
+        (course) =>
+          getCourseDesignation(course, designations, plan) === 'unset',
       ),
     ),
     confirmedPlannedCredits:
       sumCredits(countedSelected) -
       sumCredits(
         countedSelected.filter(
-          (course) => getCourseDesignation(course, designations, plan) === 'unset',
+          (course) =>
+            getCourseDesignation(course, designations, plan) === 'unset',
         ),
       ),
     approvedExemptionCredits,
@@ -755,8 +762,7 @@ export function calculateCreditSummary({
     historicalNonDegreeCredits,
     plannedNonDegreeCredits,
     publicRequiredCredits:
-      publicRequiredDegreeCredits +
-      publicRequiredNonDegreeCredits,
+      publicRequiredDegreeCredits + publicRequiredNonDegreeCredits,
     publicRequiredDegreeCredits,
     publicRequiredNonDegreeCredits,
     professionalDegreeCredits,
@@ -802,7 +808,7 @@ export function getPlanCourseCounts({
       getDegreeEligibility(course, plan).status === 'eligible' &&
       isProfessionalDegreeType(course),
   ).length;
-  const historicalCoreCount = historicalRecords.filter(
+  const historicalCoreCount = dedupeHistoricalRecords(historicalRecords).filter(
     (record) =>
       record.courseName &&
       record.designation === 'degree' &&
@@ -815,9 +821,11 @@ export function getPlanCourseCounts({
         },
         plan,
       ).status === 'eligible' &&
-      isCoreDegreeType(record),
+      isCoreDegreeType({ code: record.courseCode, category: record.category }),
   ).length;
-  const historicalProfessionalCount = historicalRecords.filter(
+  const historicalProfessionalCount = dedupeHistoricalRecords(
+    historicalRecords,
+  ).filter(
     (record) =>
       record.courseName &&
       record.designation === 'degree' &&
@@ -830,7 +838,10 @@ export function getPlanCourseCounts({
         },
         plan,
       ).status === 'eligible' &&
-      isProfessionalDegreeType(record),
+      isProfessionalDegreeType({
+        code: record.courseCode,
+        category: record.category,
+      }),
   ).length;
   return {
     coreCount: selectedCoreCount + historicalCoreCount,

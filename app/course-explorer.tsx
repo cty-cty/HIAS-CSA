@@ -190,7 +190,7 @@ const ENGLISH_EXEMPTION_STORAGE_KEY = 'hias-english-exemption-v1';
 const ACTIVE_PROGRAM_STORAGE_KEY = 'hias-active-program-v1';
 const INITIAL_SETTINGS_STORAGE_KEY = 'hias-initial-settings-completed-v1';
 const LEGACY_SELECTED_STORAGE_KEY = 'ucas-hangzhou-selected';
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 const EMPTY_SELECTED_IDS: string[] = [];
 const EMPTY_DESIGNATIONS: Record<string, CourseDesignation> = {};
 
@@ -264,6 +264,8 @@ type BackupPayload = {
   app: 'HIAS-CSA';
   savedAt: string;
   activeTermId: string;
+  /** v2 备份没有此字段，导入时沿用当前培养方向。 */
+  programPlanId?: string;
   customDatasets: CourseDataset[];
   selectedByTerm: Record<string, string[]>;
   designationsByTerm: Record<string, Record<string, CourseDesignation>>;
@@ -865,6 +867,9 @@ export default function CourseExplorer({
   const [category, setCategory] = useState('全部类别');
   const [day, setDay] = useState('全部星期');
   const [storageReady, setStorageReady] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<
+    'loading' | 'saved' | 'synced' | 'error'
+  >('loading');
   const [dataMessage, setDataMessage] = useState('');
   const [dataError, setDataError] = useState('');
   const [onlySelected, setOnlySelected] = useState(false);
@@ -937,6 +942,18 @@ export default function CourseExplorer({
   const dataFileRef = useRef<HTMLInputElement>(null);
   const programPlanFileRef = useRef<HTMLInputElement>(null);
   const backupFileRef = useRef<HTMLInputElement>(null);
+  const persistStorage = useCallback((entries: Array<[string, string]>) => {
+    try {
+      entries.forEach(([key, value]) =>
+        window.localStorage.setItem(key, value),
+      );
+      setStorageStatus('saved');
+      return true;
+    } catch {
+      setStorageStatus('error');
+      return false;
+    }
+  }, []);
   const activeDataset =
     customDatasets.find((dataset) => dataset.id === activeTermId) ??
     createTermTemplateDataset(activeTermId, defaultCourses) ??
@@ -1186,6 +1203,7 @@ export default function CourseExplorer({
     setHistoricalRecords(parsedHistoricalRecords);
     setEnglishExemptionStatus(parsedExemption);
     setStorageReady(true);
+    setStorageStatus('saved');
     const needsInitialSetup =
       window.localStorage.getItem(INITIAL_SETTINGS_STORAGE_KEY) !== '1';
     setIsInitialSetup(needsInitialSetup);
@@ -1194,48 +1212,126 @@ export default function CourseExplorer({
 
   useEffect(() => {
     if (!storageReady) return;
-    window.localStorage.setItem(
-      COURSE_DATASETS_STORAGE_KEY,
-      JSON.stringify(customDatasets),
-    );
-    window.localStorage.setItem(ACTIVE_TERM_STORAGE_KEY, activeTermId);
-  }, [activeTermId, customDatasets, storageReady]);
+    persistStorage([
+      [COURSE_DATASETS_STORAGE_KEY, JSON.stringify(customDatasets)],
+      [ACTIVE_TERM_STORAGE_KEY, activeTermId],
+    ]);
+  }, [activeTermId, customDatasets, persistStorage, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
-    window.localStorage.setItem(
-      SELECTED_BY_TERM_STORAGE_KEY,
-      JSON.stringify(selectedByTerm),
-    );
-  }, [selectedByTerm, storageReady]);
+    persistStorage([
+      [SELECTED_BY_TERM_STORAGE_KEY, JSON.stringify(selectedByTerm)],
+    ]);
+  }, [persistStorage, selectedByTerm, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
-    window.localStorage.setItem(
-      DESIGNATIONS_BY_TERM_STORAGE_KEY,
-      JSON.stringify(designationsByTerm),
-    );
-  }, [designationsByTerm, storageReady]);
+    persistStorage([
+      [DESIGNATIONS_BY_TERM_STORAGE_KEY, JSON.stringify(designationsByTerm)],
+    ]);
+  }, [designationsByTerm, persistStorage, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
-    window.localStorage.setItem(
-      PROGRAM_PLANS_STORAGE_KEY,
-      JSON.stringify(customProgramPlans),
-    );
-  }, [customProgramPlans, storageReady]);
+    persistStorage([
+      [PROGRAM_PLANS_STORAGE_KEY, JSON.stringify(customProgramPlans)],
+    ]);
+  }, [customProgramPlans, persistStorage, storageReady]);
 
   useEffect(() => {
     if (!storageReady) return;
-    window.localStorage.setItem(
-      HISTORICAL_RECORDS_STORAGE_KEY,
-      JSON.stringify(historicalRecords),
-    );
-    window.localStorage.setItem(
-      ENGLISH_EXEMPTION_STORAGE_KEY,
-      englishExemptionStatus,
-    );
-  }, [englishExemptionStatus, historicalRecords, storageReady]);
+    persistStorage([
+      [HISTORICAL_RECORDS_STORAGE_KEY, JSON.stringify(historicalRecords)],
+      [ENGLISH_EXEMPTION_STORAGE_KEY, englishExemptionStatus],
+    ]);
+  }, [englishExemptionStatus, historicalRecords, persistStorage, storageReady]);
+
+  // 其他标签页写入后同步当前页面，避免旧页面把新选择覆盖掉。
+  useEffect(() => {
+    if (!storageReady) return;
+    const handleStorage = (event: StorageEvent) => {
+      if (!event.key || event.storageArea !== window.localStorage) return;
+      try {
+        if (event.key === ACTIVE_TERM_STORAGE_KEY && event.newValue) {
+          const valid =
+            TERM_TEMPLATE_IDS.has(event.newValue) ||
+            customDatasets.some((dataset) => dataset.id === event.newValue);
+          if (valid) setActiveTermId(event.newValue);
+        } else if (
+          event.key === SELECTED_BY_TERM_STORAGE_KEY &&
+          event.newValue
+        ) {
+          const parsed = JSON.parse(event.newValue);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            setSelectedByTerm(parsed);
+          }
+        } else if (
+          event.key === DESIGNATIONS_BY_TERM_STORAGE_KEY &&
+          event.newValue
+        ) {
+          const parsed = JSON.parse(event.newValue);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            setDesignationsByTerm(parsed);
+          }
+        } else if (event.key === PROGRAM_PLANS_STORAGE_KEY && event.newValue) {
+          const parsed = JSON.parse(event.newValue);
+          if (Array.isArray(parsed) && parsed.every(isProgramPlan)) {
+            setCustomProgramPlans(parsed);
+          }
+        } else if (event.key === ACTIVE_PROGRAM_STORAGE_KEY && event.newValue) {
+          if (
+            availableProgramPlans.some((plan) => plan.id === event.newValue)
+          ) {
+            setProgramPlanId(event.newValue);
+          }
+        } else if (
+          event.key === HISTORICAL_RECORDS_STORAGE_KEY &&
+          event.newValue
+        ) {
+          const parsed = JSON.parse(event.newValue);
+          if (Array.isArray(parsed)) setHistoricalRecords(parsed);
+        } else if (
+          event.key === ENGLISH_EXEMPTION_STORAGE_KEY &&
+          event.newValue
+        ) {
+          if (
+            event.newValue === 'normal' ||
+            event.newValue === 'planned' ||
+            event.newValue === 'approved'
+          ) {
+            setEnglishExemptionStatus(event.newValue);
+          }
+        } else if (
+          event.key === COURSE_DATASETS_STORAGE_KEY &&
+          event.newValue
+        ) {
+          const parsed = JSON.parse(event.newValue);
+          if (
+            Array.isArray(parsed) &&
+            parsed.every(
+              (dataset) =>
+                dataset &&
+                typeof dataset.id === 'string' &&
+                typeof dataset.label === 'string' &&
+                Array.isArray(dataset.courses) &&
+                dataset.courses.every(isCourse),
+            )
+          ) {
+            setCustomDatasets(parsed);
+          }
+        } else {
+          return;
+        }
+        setStorageStatus('synced');
+        setSelectionMessage('已从其他标签页同步最新数据。');
+      } catch {
+        setStorageStatus('error');
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, [availableProgramPlans, customDatasets, storageReady]);
 
   const setSelectedIdsForActive = useCallback(
     (next: string[] | ((current: string[]) => string[])) => {
@@ -1496,9 +1592,10 @@ export default function CourseExplorer({
   ]);
 
   useEffect(() => {
-    if (storageReady)
-      window.localStorage.setItem(ACTIVE_PROGRAM_STORAGE_KEY, programPlanId);
-  }, [programPlanId, storageReady]);
+    if (storageReady) {
+      persistStorage([[ACTIVE_PROGRAM_STORAGE_KEY, programPlanId]]);
+    }
+  }, [persistStorage, programPlanId, storageReady]);
 
   const colleges = useMemo(
     () => [...new Set(initialCourses.map((course) => course.college))].sort(),
@@ -1919,8 +2016,7 @@ export default function CourseExplorer({
           requirementGaps.coreCount > 0 ||
           requirementGaps.professionalCount > 0 ||
           requirementGaps.degreeCredits > 0;
-        const fillsDegree =
-          (inCore || inProfessional) && degreeGapOpen;
+        const fillsDegree = (inCore || inProfessional) && degreeGapOpen;
         if (semesterCreditGap > 0 && countsTowardSemesterMinimum(course)) {
           reasons.push(
             `可补本学期有效选课学分缺口 ${formatCredits(semesterCreditGap)} 学分（秋季/春季目标不少于 10 学分）`,
@@ -2301,6 +2397,7 @@ export default function CourseExplorer({
       app: 'HIAS-CSA',
       savedAt: new Date().toISOString(),
       activeTermId,
+      programPlanId,
       customDatasets,
       selectedByTerm,
       designationsByTerm,
@@ -2308,7 +2405,7 @@ export default function CourseExplorer({
       historicalRecords,
       englishExemptionStatus,
     };
-    downloadJson('HIAS-CSA-备份-v2.json', payload);
+    downloadJson(`HIAS-CSA-备份-v${BACKUP_VERSION}.json`, payload);
     setDataManagementMessage(
       '备份已导出，包含选课、属性、培养方案、历史记录和免修状态。',
     );
@@ -2318,8 +2415,11 @@ export default function CourseExplorer({
   function parseBackupPayload(raw: unknown): BackupPayload {
     if (!raw || typeof raw !== 'object') throw new Error('备份文件不是对象。');
     const value = raw as Partial<BackupPayload>;
-    if (value.app !== 'HIAS-CSA' || value.version !== BACKUP_VERSION) {
-      throw new Error(`仅支持 HIAS-CSA v${BACKUP_VERSION} 备份文件。`);
+    if (
+      value.app !== 'HIAS-CSA' ||
+      (value.version !== 2 && value.version !== BACKUP_VERSION)
+    ) {
+      throw new Error(`仅支持 HIAS-CSA v2 或 v${BACKUP_VERSION} 备份文件。`);
     }
     if (
       !Array.isArray(value.customDatasets) ||
@@ -2333,6 +2433,12 @@ export default function CourseExplorer({
       )
     ) {
       throw new Error('备份中的课程数据格式不完整。');
+    }
+    if (
+      value.programPlanId !== undefined &&
+      typeof value.programPlanId !== 'string'
+    ) {
+      throw new Error('备份中的培养方向格式不完整。');
     }
     if (
       !value.selectedByTerm ||
@@ -2420,6 +2526,15 @@ export default function CourseExplorer({
     setSelectedByTerm(payload.selectedByTerm);
     setDesignationsByTerm(payload.designationsByTerm);
     setCustomProgramPlans(payload.programPlans);
+    const restoredPlanId = payload.programPlanId;
+    if (
+      restoredPlanId &&
+      [...PROGRAM_PLANS, ...payload.programPlans].some(
+        (plan) => plan.id === restoredPlanId,
+      )
+    ) {
+      setProgramPlanId(restoredPlanId);
+    }
     setHistoricalRecords(payload.historicalRecords);
     setEnglishExemptionStatus(payload.englishExemptionStatus);
     setRestorePreview(null);
@@ -2434,8 +2549,26 @@ export default function CourseExplorer({
       setDataManagementError('请填写大于 0 的历史学分。');
       return;
     }
+    const courseCode = historyDraft.courseCode
+      .trim()
+      .toUpperCase()
+      .replace(/-\d+$/, '');
+    if (
+      courseCode &&
+      courseCode !== 'HIAS-LECTURE' &&
+      historicalRecords.some(
+        (record) =>
+          record.courseCode.trim().toUpperCase().replace(/-\d+$/, '') ===
+          courseCode,
+      )
+    ) {
+      setDataManagementError(
+        '这门课程已经在历史记录中，重复课程不会再次计入学分。',
+      );
+      return;
+    }
     const matchedCourse = initialCourses.find(
-      (course) => course.code === historyDraft.courseCode.trim(),
+      (course) => course.code.toUpperCase() === courseCode,
     );
     setHistoricalRecords((current) => [
       ...current,
@@ -2443,7 +2576,7 @@ export default function CourseExplorer({
         id: `history-${Date.now()}`,
         term: historyDraft.term.trim() || '学期待补充',
         courseName: historyDraft.courseName.trim(),
-        courseCode: historyDraft.courseCode.trim(),
+        courseCode,
         credits,
         category: historyDraft.category,
         subject: matchedCourse?.subject,
@@ -2509,15 +2642,14 @@ export default function CourseExplorer({
   }
 
   function completeSettings() {
-    try {
-      window.localStorage.setItem(ACTIVE_PROGRAM_STORAGE_KEY, programPlanId);
-      window.localStorage.setItem(
-        ENGLISH_EXEMPTION_STORAGE_KEY,
-        englishExemptionStatus,
-      );
-      window.localStorage.setItem(INITIAL_SETTINGS_STORAGE_KEY, '1');
+    const saved = persistStorage([
+      [ACTIVE_PROGRAM_STORAGE_KEY, programPlanId],
+      [ENGLISH_EXEMPTION_STORAGE_KEY, englishExemptionStatus],
+      [INITIAL_SETTINGS_STORAGE_KEY, '1'],
+    ]);
+    if (saved) {
       setIsInitialSetup(false);
-    } catch {
+    } else {
       setSelectionMessage(
         '设置已在本次打开期间生效，但浏览器未能保存；下次打开时可能需要重新确认。',
       );
@@ -3309,7 +3441,9 @@ export default function CourseExplorer({
                         <ClipboardList />
                         <div>
                           <h3>历史学分与 HIAS 讲堂</h3>
-                          <p>补录已修学分与讲堂次数，均计入培养要求进度；数据仅存本机。</p>
+                          <p>
+                            补录已修学分与讲堂次数，均计入培养要求进度；数据仅存本机。
+                          </p>
                         </div>
                       </div>
                       <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -3877,7 +4011,9 @@ export default function CourseExplorer({
                         <ClipboardList />
                         <div>
                           <strong>还没有已选课程</strong>
-                          <span>先从课程列表选择课程，再回来设置学位课属性。</span>
+                          <span>
+                            先从课程列表选择课程，再回来设置学位课属性。
+                          </span>
                         </div>
                         <Button
                           onClick={() => setView('courses')}
@@ -4072,15 +4208,20 @@ export default function CourseExplorer({
                     </span>
                   </div>
                 </section>
-              ) : null
-              }
+              ) : null}
             </TabsContent>
             {view === 'courses' && (
               <aside className="selection-sidebar" aria-label="本学期选课方案">
                 <div className="selection-summary-head">
                   <span>我的预选方案</span>
                   <span className="local-save-state">
-                    {storageReady ? '保存在本机' : '正在恢复…'}
+                    {!storageReady
+                      ? '正在恢复…'
+                      : storageStatus === 'error'
+                        ? '保存失败'
+                        : storageStatus === 'synced'
+                          ? '已同步'
+                          : '已保存在本机'}
                   </span>
                 </div>
                 <div className="selection-numbers">
@@ -4496,9 +4637,7 @@ export default function CourseExplorer({
       </Dialog>
 
       <Dialog open={timetableOpen} onOpenChange={setTimetableOpen}>
-        <DialogContent
-          className="flex min-w-0 flex-col w-[min(94vw,1520px)] max-w-none sm:max-w-none max-h-[90vh] overflow-y-auto"
-        >
+        <DialogContent className="flex min-w-0 flex-col w-[min(94vw,1520px)] max-w-none sm:max-w-none max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>我的模拟课程表</DialogTitle>
             <DialogDescription>
@@ -4521,14 +4660,13 @@ export default function CourseExplorer({
                 onChange={(event) => setWeek(Number(event.target.value))}
                 value={week}
               >
-                {Array.from(
-                  { length: 20 },
-                  (_, index) => index + 1,
-                ).map((value) => (
-                  <NativeSelectOption key={value} value={value}>
-                    第 {value} 周
-                  </NativeSelectOption>
-                ))}
+                {Array.from({ length: 20 }, (_, index) => index + 1).map(
+                  (value) => (
+                    <NativeSelectOption key={value} value={value}>
+                      第 {value} 周
+                    </NativeSelectOption>
+                  ),
+                )}
               </NativeSelect>
             </label>
           </div>
@@ -4537,8 +4675,7 @@ export default function CourseExplorer({
             <div className="min-w-0 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               {currentWeekConflicts.size > 0 && (
                 <div className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  <Zap className="size-4" /> 本周有{' '}
-                  {currentWeekConflicts.size}{' '}
+                  <Zap className="size-4" /> 本周有 {currentWeekConflicts.size}{' '}
                   门课程时间重叠，已用红色标出。
                 </div>
               )}
@@ -4554,44 +4691,38 @@ export default function CourseExplorer({
                       {label}
                     </div>
                   ))}
-                  {Array.from(
-                    { length: 13 },
-                    (_, index) => index + 1,
-                  ).map((period) => (
-                    <div
-                      className="timetable-period"
-                      key={period}
-                      style={{ gridColumn: 1, gridRow: period + 1 }}
-                    >
-                      <strong>{period}</strong>
-                      <span>第 {period} 节</span>
-                    </div>
-                  ))}
-                  {DAYS.flatMap((_, dayIndex) =>
-                    Array.from(
-                      { length: 13 },
-                      (_, index) => index + 1,
-                    ).map((period) => (
+                  {Array.from({ length: 13 }, (_, index) => index + 1).map(
+                    (period) => (
                       <div
-                        className="timetable-cell"
-                        key={`${dayIndex}-${period}`}
-                        style={{
-                          gridColumn: dayIndex + 2,
-                          gridRow: period + 1,
-                        }}
-                      />
-                    )),
+                        className="timetable-period"
+                        key={period}
+                        style={{ gridColumn: 1, gridRow: period + 1 }}
+                      >
+                        <strong>{period}</strong>
+                        <span>第 {period} 节</span>
+                      </div>
+                    ),
+                  )}
+                  {DAYS.flatMap((_, dayIndex) =>
+                    Array.from({ length: 13 }, (_, index) => index + 1).map(
+                      (period) => (
+                        <div
+                          className="timetable-cell"
+                          key={`${dayIndex}-${period}`}
+                          style={{
+                            gridColumn: dayIndex + 2,
+                            gridRow: period + 1,
+                          }}
+                        />
+                      ),
+                    ),
                   )}
                   {selectedCourses.flatMap((course) =>
                     course.schedules
-                      .filter((schedule) =>
-                        schedule.weeks.includes(week),
-                      )
+                      .filter((schedule) => schedule.weeks.includes(week))
                       .map((schedule, scheduleIndex) => {
                         const color = courseColor(course.id);
-                        const conflict = currentWeekConflicts.has(
-                          course.id,
-                        );
+                        const conflict = currentWeekConflicts.has(course.id);
                         return (
                           <button
                             className={`timetable-course ${conflict ? 'timetable-course-conflict' : ''}`}
@@ -4600,12 +4731,8 @@ export default function CourseExplorer({
                             style={{
                               gridColumn: schedule.dayIndex + 2,
                               gridRow: `${schedule.start + 1} / ${schedule.end + 2}`,
-                              backgroundColor: conflict
-                                ? '#ffe4e6'
-                                : color[0],
-                              borderColor: conflict
-                                ? '#e11d48'
-                                : color[1],
+                              backgroundColor: conflict ? '#ffe4e6' : color[0],
+                              borderColor: conflict ? '#e11d48' : color[1],
                               color: conflict ? '#9f1239' : color[1],
                             }}
                             type="button"
