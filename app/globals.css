@@ -1717,12 +1717,57 @@ button {
   font-weight: 700;
   color: #172b46;
 }
-.guide-course-library::before {
-  content: '培养方案课程库';
-  grid-column: 1 / -1;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #172b46;
+.guide-course-workspace-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.guide-course-workspace-head h3 { font-size: 1.125rem; font-weight: 700; color: #172b46; }
+.guide-course-workspace-head p,
+.guide-course-workspace-footer p { margin-top: 0.35rem; font-size: 0.875rem; line-height: 1.7; color: #526781; }
+.merged-course-library { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+.merged-course-library .program-course-group { min-width: 0; align-self: start; }
+.merged-course-library .program-course-group-title { align-items: flex-start; gap: 0.75rem; padding: 1rem; background: #f2f6fc; }
+.merged-course-library .program-course-group-title h3 { font-size: 1rem; }
+.merged-course-library .program-course-group-title p { font-size: 0.875rem; line-height: 1.6; color: #526781; }
+.merged-course-library .program-course-group-title [data-slot='badge'] { flex-shrink: 0; }
+.merged-course-library .program-course-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem 1rem;
+  padding: 1rem;
+  align-items: center;
+}
+.merged-course-library .program-course-row-selected { background: #f7faff; box-shadow: inset 3px 0 #234c89; }
+.merged-course-library .program-course-row > button:first-child strong { font-size: 1rem; line-height: 1.6; color: #172b46; }
+.merged-course-library .program-course-row > button:first-child span { font-size: 0.875rem; color: #60728b; line-height: 1.6; overflow-wrap: anywhere; white-space: normal; }
+.merged-course-library .program-course-row > button:first-child .program-course-selected-label { display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.4rem; border-radius: 0.3rem; font-size: 0.8125rem; font-weight: 500; color: #234c89; background: #e5edf9; }
+.merged-course-library .program-course-row > button:first-child .program-course-requirement { color: #234c89; }
+.program-course-actions { display: flex; align-items: center; gap: 0.5rem; }
+.program-course-designation { width: 8.5rem; }
+.merged-course-library .program-select { min-height: 2.75rem; font-size: 0.875rem; }
+.merged-course-library .program-select[aria-pressed='false'] { color: white; }
+.merged-course-library .program-select[aria-pressed='true'] { color: #526781; }
+.program-course-eligibility { grid-column: 1 / -1; margin: 0; font-size: 0.875rem; line-height: 1.6; color: #60728b; }
+.merged-course-library .program-course-footnote,
+.merged-course-library .program-course-empty { font-size: 0.875rem; line-height: 1.7; color: #60728b; }
+.guide-course-workspace-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 1rem; }
+.guide-course-workspace-footer p { flex: 1 1 20rem; }
+.merged-course-library button:focus-visible { outline: 2px solid #234c89; outline-offset: 3px; }
+@media (min-width: 1400px) {
+  .merged-course-library { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .merged-course-library .program-course-other { grid-column: 1 / -1; }
+  .merged-course-library .program-course-row { grid-template-columns: minmax(0, 1fr); }
+  .merged-course-library .program-course-other .program-course-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .program-course-actions { justify-content: flex-end; }
+}
+@media (max-width: 640px) {
+  .merged-course-library .program-course-row { grid-template-columns: minmax(0, 1fr); }
+  .program-course-actions { justify-content: flex-end; }
+  .merged-course-library .program-course-group-title { flex-wrap: wrap; }
 }
 .requirement-status-card,
 .history-card,
@@ -2780,6 +2825,63 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
+.catalog-display-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.catalog-density {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid #dce4f0;
+  border-radius: 0.65rem;
+  background: #edf2f9;
+}
+.catalog-density button {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.45rem;
+  font-size: 0.875rem;
+  color: #526781;
+}
+.catalog-density button[aria-pressed='true'] {
+  color: #234c89;
+  background: #fff;
+  box-shadow: 0 1px 4px #17315c12;
+  font-weight: 650;
+}
+.catalog-plan-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #eaf0fa;
+  border: 1px solid #d7e2f3;
+  border-radius: 0.85rem;
+  color: #234c89;
+}
+.catalog-plan-strip > svg { width: 1.4rem; flex-shrink: 0; }
+.catalog-plan-strip > div { flex: 1; min-width: 0; }
+.catalog-plan-strip strong { display: block; font-size: 1rem; }
+.catalog-plan-strip span { display: block; margin-top: 0.3rem; font-size: 0.875rem; color: #526781; }
+.catalog-plan-strip button { display: flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; font-size: 0.875rem; }
+.catalog-plan-strip button svg { width: 1rem; }
+.catalog-compact .course-extra span:not(:first-child),
+.catalog-compact .course-enrollment,
+.catalog-compact .course-people small { display: none; }
+.catalog-compact .course-card { padding: 1rem; }
+.catalog-compact .course-time-block { margin-bottom: 0.7rem; background: #f0f4fa; }
+.catalog-compact .course-card-footer { border-top: 1px solid #edf1f7; padding-top: 0.75rem; }
+.catalog-density button:focus-visible,
+.catalog-plan-strip button:focus-visible { outline: 2px solid #234c89; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .catalog-plan-strip { flex-wrap: wrap; }
+  .catalog-plan-strip > div { flex-basis: calc(100% - 3rem); }
+  .catalog-plan-strip button { margin-left: 2.25rem; }
+}
 .catalog-grid .course-card {
   display: flex;
   flex-direction: column;
@@ -2950,7 +3052,11 @@ button {
 .selection-numbers {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  padding: 1.15rem 0;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 1px solid #dce6f5;
+  border-radius: 0.75rem;
+  background: #f0f5fc;
 }
 .selection-numbers > * {
   display: flex;
@@ -3671,6 +3777,27 @@ button {
 }
 
 /* Programme requirements follow the same blue-and-white workspace hierarchy. */
+.program-credit-overview { padding: 1rem 1.4rem; background: #f4f7fc; }
+.program-credit-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.6rem 1rem; }
+.program-credit-total > span { font-size: 0.875rem; color: #526781; }
+.program-credit-total strong { color: #234c89; font-size: 2rem; font-variant-numeric: tabular-nums; }
+.program-credit-total small { color: #526781; font-size: 1rem; font-weight: 500; }
+.program-credit-sources { display: flex; flex-wrap: wrap; gap: 0.35rem 1.2rem; margin-top: 0.4rem; color: #60728b; font-size: 0.875rem; }
+.guide-plan-summary .guide-progress { padding: 1rem 1.4rem; }
+.guide-plan-summary .guide-progress h3 small { margin-left: 0.5rem; font-size: 0.875rem; font-weight: 400; color: #60728b; }
+.guide-plan-summary .guide-progress .requirement-item { padding: 0.75rem; background: #fff; }
+.guide-detail-rules { border: 1px solid #dce3ed; border-radius: 0.85rem; background: white; overflow: hidden; }
+.guide-detail-rules-trigger { display: flex; width: 100%; align-items: center; justify-content: space-between; min-height: 3rem; padding: 0.8rem 1rem; font-size: 0.875rem; color: #526781; text-align: left; }
+.guide-detail-rules-trigger > svg { width: 1rem; transition: transform 150ms ease; }
+.guide-detail-rules-trigger[aria-expanded='true'] > svg { transform: rotate(180deg); }
+.guide-detail-rules-text { padding: 0 1rem; color: #60728b; font-size: 0.875rem; line-height: 1.7; }
+.guide-detail-rules .guide-source { margin: 0.75rem 1rem 1rem; font-size: 0.875rem; }
+.guide-page .degree-rule-card { padding: 1rem; }
+.guide-page .degree-rule-minimum { margin-block: 0.65rem; padding: 0.6rem 0.75rem; }
+.guide-page .guide-course-workspace-footer { justify-content: flex-end; }
+@media (max-width: 700px) {
+  .program-credit-overview, .guide-plan-summary .guide-progress { padding: 1rem; }
+}
 .guide-plan-summary {
   border: 1px solid #dce3ed;
   border-radius: 0.85rem;
