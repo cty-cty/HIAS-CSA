@@ -81,7 +81,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { PROGRAM_PLANS, type ProgramPlan } from '@/app/program-plans';
+import {
+  COLLEGE_DIRECTORY,
+  getProgramPlanCollege,
+  groupProgramPlansByCollege,
+  PROGRAM_PLANS,
+  type ProgramPlan,
+} from '@/app/program-plans';
 import { isPlannedCourse, mergeCourseRows, reconcileCourseUpdate } from '@/app/course-data';
 import {
   calculateCreditSummary,
@@ -778,6 +784,8 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
     (plan.source === undefined || typeof plan.source === 'string') &&
     (plan.updatedAt === undefined || typeof plan.updatedAt === 'string') &&
     (plan.note === undefined || typeof plan.note === 'string') &&
+    (plan.college === undefined ||
+      (typeof plan.college === 'string' && plan.college.trim().length > 0)) &&
     (plan.requiredPublicRequiredNonDegreeCourses === undefined ||
       (Array.isArray(plan.requiredPublicRequiredNonDegreeCourses) &&
         plan.requiredPublicRequiredNonDegreeCourses.every(
@@ -970,6 +978,8 @@ export default function CourseExplorer({
     [],
   );
   const [programPlanId, setProgramPlanId] = useState('optical-master');
+  const [programPlanPickerOpen, setProgramPlanPickerOpen] = useState(false);
+  const [programPlanPickerCollege, setProgramPlanPickerCollege] = useState<string | null>(null);
   const [programPlanMessage, setProgramPlanMessage] = useState('');
   const [programPlanError, setProgramPlanError] = useState('');
   const [week, setWeek] = useState(2);
@@ -1120,9 +1130,32 @@ export default function CourseExplorer({
     );
     return [...planMap.values()];
   }, [customProgramPlans]);
+  const programPlanGroups = useMemo(() => {
+    const groupedPlans = new Map(
+      groupProgramPlansByCollege(availableProgramPlans),
+    );
+    const directoryLabels = new Set(
+      COLLEGE_DIRECTORY.map((entry) => entry.label),
+    );
+    const groups = COLLEGE_DIRECTORY.map(({ id, label }) => ({
+      id,
+      label,
+      plans: groupedPlans.get(label) ?? [],
+    }));
+    [...groupedPlans.entries()]
+      .filter(([label]) => !directoryLabels.has(label))
+      .forEach(([label, plans]) => {
+        groups.push({ id: 'custom-' + label, label, plans });
+      });
+    return groups;
+  }, [availableProgramPlans]);
   const activePlan =
     availableProgramPlans.find((plan) => plan.id === programPlanId) ??
     availableProgramPlans[0] ?? PROGRAM_PLANS[0];
+  const activeProgramCollege = getProgramPlanCollege(activePlan);
+  const expandedProgramGroup = programPlanGroups.find(
+    (group) => group.label === programPlanPickerCollege,
+  );
 
   useEffect(() => {
     selectedIdsRef.current = selectedIds;
@@ -1720,7 +1753,13 @@ export default function CourseExplorer({
   }, [persistStorage, programPlanId, storageReady]);
 
   const colleges = useMemo(
-    () => [...new Set(initialCourses.map((course) => course.college))].sort(),
+    () =>
+      [
+        ...new Set([
+          ...COLLEGE_DIRECTORY.map((entry) => entry.label),
+          ...initialCourses.map((course) => course.college),
+        ]),
+      ].sort(),
     [initialCourses],
   );
   const categories = useMemo(
@@ -1731,6 +1770,65 @@ export default function CourseExplorer({
     () => [...new Set(initialCourses.map((course) => course.subject))].sort(),
     [initialCourses],
   );
+  const subjectsForCollege = useMemo(
+    () =>
+      college === '全部院系'
+        ? subjects
+        : [
+            ...new Set(
+              initialCourses
+                .filter((course) => course.college === college)
+                .map((course) => course.subject),
+            ),
+          ].sort(),
+    [college, initialCourses, subjects],
+  );
+  const subjectGroups = useMemo(() => {
+    const programsByCollege = new Map<string, Set<string>>();
+    availableProgramPlans.forEach((plan) => {
+      const college = getProgramPlanCollege(plan);
+      const programs = programsByCollege.get(college) ?? new Set<string>();
+      programs.add(plan.program);
+      programsByCollege.set(college, programs);
+    });
+
+    const groupedSubjects = new Set<string>();
+    const directoryLabels = new Set(
+      COLLEGE_DIRECTORY.map((entry) => entry.label),
+    );
+    const groups = COLLEGE_DIRECTORY.map(({ id, label }) => {
+      const programs = programsByCollege.get(label) ?? new Set<string>();
+      const items = [
+        ...new Set([
+          ...subjectsForCollege.filter((item) => programs.has(item)),
+          ...(college === '全部院系' ? programs : []),
+        ]),
+      ].sort();
+      items.forEach((item) => groupedSubjects.add(item));
+      return { id, label, items };
+    });
+
+    [...programsByCollege.entries()]
+      .filter(([label]) => !directoryLabels.has(label))
+      .forEach(([label, programs]) => {
+        const items = [
+          ...new Set([
+            ...subjectsForCollege.filter((item) => programs.has(item)),
+            ...(college === '全部院系' ? programs : []),
+          ]),
+        ].sort();
+        items.forEach((item) => groupedSubjects.add(item));
+        groups.push({ id: 'custom-' + label, label, items });
+      });
+
+    const otherSubjects = subjectsForCollege.filter(
+      (item) => !groupedSubjects.has(item),
+    );
+    if (otherSubjects.length > 0) {
+      groups.push({ id: 'other-subjects', label: '其他学科/专业', items: otherSubjects });
+    }
+    return groups;
+  }, [availableProgramPlans, college, subjectsForCollege]);
   const selectedCourses = useMemo(
     () => initialCourses.filter((course) => selectedIds.includes(course.id)),
     [initialCourses, selectedIds],
@@ -3052,7 +3150,10 @@ export default function CourseExplorer({
                           <NativeSelect
                             aria-label="按开课院系筛选"
                             className="w-full [&>select]:h-11"
-                            onChange={(event) => setCollege(event.target.value)}
+                            onChange={(event) => {
+                              setCollege(event.target.value);
+                              setSubject('全部学科/专业');
+                            }}
                             value={college}
                           >
                             <NativeSelectOption value="全部院系">
@@ -3065,18 +3166,32 @@ export default function CourseExplorer({
                             ))}
                           </NativeSelect>
                           <NativeSelect
-                            aria-label="按所属学科或专业筛选"
+                            aria-label="按所属学科或专业筛选（需先选择学院）"
                             className="w-full [&>select]:h-11"
                             onChange={(event) => setSubject(event.target.value)}
                             value={subject}
+                            disabled={college === '全部院系'}
                           >
                             <NativeSelectOption value="全部学科/专业">
                               全部学科/专业
                             </NativeSelectOption>
-                            {subjects.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {item}
-                              </NativeSelectOption>
+                            {subjectGroups.map((group) => (
+                              <optgroup key={group.id} label={group.label}>
+                                {group.items.length > 0 ? (
+                                  group.items.map((item) => (
+                                    <NativeSelectOption key={item} value={item}>
+                                      {item}
+                                    </NativeSelectOption>
+                                  ))
+                                ) : (
+                                  <NativeSelectOption
+                                    disabled
+                                    value={'empty-' + group.id}
+                                  >
+                                    暂无已载入专业
+                                  </NativeSelectOption>
+                                )}
+                              </optgroup>
                             ))}
                           </NativeSelect>
                           <NativeSelect
@@ -3952,7 +4067,7 @@ export default function CourseExplorer({
                           [
                             '专业学位课',
                             formatRequirementProgress(
-                              programCreditSummary.professionalDegreeCreditsWithApproval,
+                              programCreditSummary.professionalDegreeCredits,
                               activePlan.degreeCourseCredits,
                             ),
                           ],
@@ -3994,11 +4109,10 @@ export default function CourseExplorer({
                             {label === '专业学位课' &&
                               programCreditSummary.approvalRequiredDegreeCredits > 0 && (
                                 <small className="text-xs leading-5 text-amber-700">
-                                  方案认可范围内{' '}
-                                  {formatCredits(programCreditSummary.professionalDegreeCredits)}{' '}
-                                  + 非本专业的专业类课程{' '}
-                                  {formatCredits(programCreditSummary.approvalRequiredDegreeCredits)}{' '}
-                                  学分
+                                  已确认 {formatCredits(programCreditSummary.professionalDegreeCredits)}{' '}
+                                  / {formatCredits(activePlan.degreeCourseCredits)} 学分；非本专业的专业类课程 +{formatCredits(programCreditSummary.approvalRequiredDegreeCredits)}{' '}
+                                  学分，规划合计 {formatCredits(programCreditSummary.professionalDegreeCreditsWithApproval)}{' '}
+                                  学分（待确认，不触发培养要求完成）
                                 </small>
                               )}
                           </div>
@@ -4020,7 +4134,7 @@ export default function CourseExplorer({
                       )}
                       {programCreditSummary.approvalRequiredDegreeCredits > 0 && (
                         <p className="mt-2 text-xs leading-5 text-amber-700">
-                          非本专业专业类课程可补充规划学分，不能替代本人培养方案的核心与专业门数要求；请查阅学校官网与学院正式材料核对学位属性。
+                          非本专业的专业类课程可以作为专业学位规划学分补充，但不能替代本人培养方案的核心 2 门和专业 2 门；建议根据学校官网、学院培养方案和教务系统确认是否可以设置为学位课，并与自己的导师确认课程安排是否合理。
                         </p>
                       )}
                     </div>
@@ -4682,7 +4796,16 @@ export default function CourseExplorer({
           </button>
         </div>
       )}
-      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+      <Dialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          setSettingsOpen(open);
+          if (!open) {
+            setProgramPlanPickerOpen(false);
+            setProgramPlanPickerCollege(null);
+          }
+        }}
+      >
         <DialogContent className="settings-dialog">
           <DialogHeader>
             <DialogTitle>
@@ -4691,23 +4814,105 @@ export default function CourseExplorer({
             <DialogDescription>
               {isInitialSetup
                 ? '请选择培养方向，并确认是否已获得英语免修免考资格。完成后即可开始选课。'
-                : '培养方向决定课程归属和学分要求，请选择自己的方案。'}
+                : '请先选择所属学院，再选择对应的培养方向；培养方向决定课程归属和学分要求。'}
             </DialogDescription>
           </DialogHeader>
-          <label className="settings-field">
-            培养方向
-            <NativeSelect
-              aria-label="设置培养方向"
-              value={programPlanId}
-              onChange={(event) => setProgramPlanId(event.target.value)}
-            >
-              {availableProgramPlans.map((plan) => (
-                <NativeSelectOption key={plan.id} value={plan.id}>
-                  {plan.label}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+          <div className="settings-field">
+            <span>培养方向</span>
+            <div className="program-plan-picker">
+              <button
+                type="button"
+                className="program-plan-picker-trigger"
+                aria-label="选择培养方向"
+                aria-expanded={programPlanPickerOpen}
+                aria-controls="program-plan-picker-menu"
+                onClick={() => {
+                  setProgramPlanPickerCollege(null);
+                  setProgramPlanPickerOpen((open) => !open);
+                }}
+              >
+                <span className="program-plan-picker-trigger-content">
+                  <strong>{activePlan.label}</strong>
+                  <small>{activeProgramCollege}</small>
+                </span>
+                <ChevronDown
+                  aria-hidden="true"
+                  className={programPlanPickerOpen ? 'is-open' : ''}
+                />
+              </button>
+              {programPlanPickerOpen && (
+                <div
+                  id="program-plan-picker-menu"
+                  className="program-plan-picker-menu"
+                  aria-label="选择学院和培养方向"
+                >
+                  <p className="program-plan-picker-hint">
+                    先选择所属学院，再选择该学院内的培养方向或专业
+                  </p>
+                  {programPlanGroups.map((group) => {
+                    const expanded = group.label === programPlanPickerCollege;
+                    return (
+                      <div className="program-plan-picker-group" key={group.id}>
+                        <button
+                          type="button"
+                          className="program-plan-picker-group-toggle"
+                          aria-expanded={expanded}
+                          aria-controls={`program-plan-group-${group.id}`}
+                          onClick={() =>
+                            setProgramPlanPickerCollege((current) =>
+                              current === group.label ? null : group.label,
+                            )
+                          }
+                        >
+                          <span>{group.label}</span>
+                          <span className="program-plan-picker-count">
+                            {group.plans.length > 0
+                              ? `${group.plans.length} 个培养方向`
+                              : '暂无已导入培养方案'}
+                          </span>
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={expanded ? 'is-open' : ''}
+                          />
+                        </button>
+                        {expanded && (
+                          <div
+                            id={`program-plan-group-${group.id}`}
+                            className="program-plan-picker-group-options"
+                          >
+                            {expandedProgramGroup?.plans.length ? (
+                              expandedProgramGroup.plans.map((plan) => (
+                                <button
+                                  type="button"
+                                  className="program-plan-picker-option"
+                                  aria-pressed={plan.id === activePlan.id}
+                                  key={plan.id}
+                                  onClick={() => {
+                                    setProgramPlanId(plan.id);
+                                    setProgramPlanPickerOpen(false);
+                                    setProgramPlanPickerCollege(null);
+                                  }}
+                                >
+                                  <span>{plan.label}</span>
+                                  {plan.id === activePlan.id && (
+                                    <CheckCircle2 aria-hidden="true" />
+                                  )}
+                                </button>
+                              ))
+                            ) : (
+                              <p className="program-plan-picker-empty">
+                                该学院暂未导入培养方案，后续补充正式方案后会显示在这里。
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
           <fieldset className="settings-qualification">
             <legend id="settings-qualification-label">
               是否已获得英语免修免考资格？

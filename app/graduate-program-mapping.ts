@@ -91,6 +91,20 @@ export function getAcademicAllowedSubjects(
   );
 }
 
+export function getRelatedProfessionalPrograms(
+  plan: Pick<ProgramPlan, 'degree' | 'program'>,
+) {
+  const mapping = getGraduateProgramMapping(plan);
+  if (!mapping || mapping.kind !== 'professional') return new Set<string>();
+  return new Set(
+    GRADUATE_PROGRAM_MAPPINGS.filter(
+      (candidate) =>
+        candidate.kind === 'professional' &&
+        candidate.firstLevel === mapping.firstLevel,
+    ).flatMap((candidate) => [candidate.firstLevel, candidate.secondLevel]),
+  );
+}
+
 export function getGraduateProgramScopeLabel(
   plan: Pick<ProgramPlan, 'degree' | 'program'>,
 ) {

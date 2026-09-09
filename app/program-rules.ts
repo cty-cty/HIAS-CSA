@@ -444,7 +444,8 @@ export function getProgramChecks({
         '建议查阅学校官网、学院培养方案和教务系统，核对这些课程是否可以设置为学位课、适用于当前培养类型。' +
         (gaps.approvalRequiredDegreeCredits + gaps.verificationDegreeCredits > 0
           ? '非本专业专业类课程已纳入规划学分合计，但不能替代本专业的核心与专业门数要求；'
-          : '资料不足的课程暂不自动满足对应培养要求；') + '页面不代表学校认定结果。',
+          : '资料不足的课程暂不自动满足对应培养要求；') +
+        '确认对象：本人导师、学院培养管理老师/教学秘书和教务系统。页面只提供提醒，不代表学校认定结果。',
       relatedCourseGroups,
     });
   }

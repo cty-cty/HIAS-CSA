@@ -30,6 +30,8 @@ export type ProgramPlan = {
   label: string;
   degree: string;
   program: string;
+  /** 所属学院分组；旧版自定义方案缺失时归入“其他培养方案”。 */
+  college?: string;
   code: string;
   totalCredits: number | null;
   publicRequiredCredits: number | null;
@@ -44,6 +46,7 @@ export type ProgramPlan = {
   professionalMinimum: number;
   coreCourses: string[];
   professionalCourses: string[];
+  sharedCourses?: string[];
   source?: string;
   updatedAt?: string;
   note?: string;
@@ -52,6 +55,54 @@ export type ProgramPlan = {
   specialRules?: ProgramSpecialRule[];
   degreeStructureStatus?: 'confirmed' | 'verification';
 };
+
+export type CollegeDirectoryEntry = {
+  id: string;
+  label: string;
+  aliases?: string[];
+};
+
+/** 学院一级目录；没有课程或培养方案的学院也可以先占位展示。 */
+export const COLLEGE_DIRECTORY: CollegeDirectoryEntry[] = [
+  { id: 'physics-mathematics', label: '基础物理与数学科学学院' },
+  {
+    id: 'physics-optoelectronics',
+    label: '物理与光电工程学院',
+    aliases: ['物光学院'],
+  },
+  { id: 'chemistry-materials', label: '化学与材料科学学院' },
+  { id: 'life-health', label: '生命与健康科学学院' },
+  { id: 'pharmaceutical-science', label: '药物科学与技术学院' },
+  { id: 'environment', label: '环境学院' },
+  { id: 'molecular-medicine', label: '分子医学院' },
+  { id: 'intelligent-science-technology', label: '智能科学与技术学院' },
+];
+
+export const FALLBACK_PROGRAM_PLAN_COLLEGE = '其他培养方案';
+
+export function getProgramPlanCollege(
+  plan: Pick<ProgramPlan, 'college'>,
+): string {
+  const college = plan.college?.trim();
+  if (!college) return FALLBACK_PROGRAM_PLAN_COLLEGE;
+  const directoryEntry = COLLEGE_DIRECTORY.find(
+    (entry) => entry.label === college || entry.aliases?.includes(college),
+  );
+  return directoryEntry?.label ?? college;
+}
+
+export function groupProgramPlansByCollege(
+  plans: ProgramPlan[],
+): Array<[string, ProgramPlan[]]> {
+  const groupMap = new Map<string, ProgramPlan[]>();
+  plans.forEach((plan) => {
+    const college = getProgramPlanCollege(plan);
+    const group = groupMap.get(college) ?? [];
+    group.push(plan);
+    groupMap.set(college, group);
+  });
+  return [...groupMap.entries()];
+}
 
 const PHYSICAL_ELECTRONICS_CORE = [
   '半导体光谱学导论',
@@ -77,6 +128,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     label: '物理电子学 · 学硕',
     degree: '学术型硕士',
     program: '物理电子学',
+    college: '物光学院',
     code: '0809 电子科学与技术',
     totalCredits: 30,
     publicRequiredCredits: 7,
@@ -98,6 +150,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     label: '光电信息工程 · 专硕',
     degree: '专业型硕士',
     program: '光电信息工程',
+    college: '物光学院',
     code: '085408 光电信息工程',
     totalCredits: 25,
     publicRequiredCredits: 8,
@@ -139,6 +192,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     label: '人工智能 · 专硕',
     degree: '专业型硕士',
     program: '人工智能',
+    college: '物光学院',
     code: '085410 人工智能',
     totalCredits: 25,
     publicRequiredCredits: 8,
@@ -177,6 +231,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     label: '材料工程 · 专硕',
     degree: '专业型硕士',
     program: '材料工程',
+    college: '物光学院',
     code: '085601 材料工程',
     totalCredits: 25,
     publicRequiredCredits: 8,
@@ -212,15 +267,16 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     label: '物理电子学 · 普通招考博士',
     degree: '博士',
     program: '物理电子学',
+    college: '物光学院',
     code: '0809 电子科学与技术',
-    totalCredits: null,
-    publicRequiredCredits: 5,
-    publicRequiredDegreeCredits: 5,
+    totalCredits: 38,
+    publicRequiredCredits: 11,
+    publicRequiredDegreeCredits: 11,
     publicRequiredNonDegreeCredits: 0,
     requiredPublicRequiredNonDegreeCourses: [],
-    degreeCourseCredits: 4,
+    degreeCourseCredits: 16,
     professionalNonDegreeCredits: null,
-    publicElectiveCredits: null,
+    publicElectiveCredits: 2,
     innovationCredits: null,
     coreMinimum: 0,
     professionalMinimum: 0,
@@ -235,12 +291,12 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
       label: '至少1门本学科硕博通用或博士专属核心/专业课作为学位课',
     }],
     note:
-      '学校须知第10、22页：普博公共必修5学分，专业学位至少4学分，并至少1门本学科硕博通用或博士专属核心/专业学位课。学院完整要求待核验，不套用2+2。',
+      '学院材料已明确：普通招考博士总学分不少于38、公共必修不少于11、专业学位课不少于16、公共选修不少于2。具体博士核心课和专业课门数、不同培养类型的课程结构仍需结合学院方案确认，不套用硕士2+2。',
   },
   ...(['direct_phd', 'combined_phd'] as const).map((studentTrack): ProgramPlan => ({
     id: 'physical-' + studentTrack,
     label: '物理电子学 · ' + (studentTrack === 'direct_phd' ? '直博' : '硕博连读'),
-    degree: '博士', program: '物理电子学', code: '0809 电子科学与技术',
+    degree: '博士', program: '物理电子学', college: '物光学院', code: '0809 电子科学与技术',
     studentTrack, totalCredits: null,
     publicRequiredCredits: 11, publicRequiredDegreeCredits: 11,
     publicRequiredNonDegreeCredits: 0, requiredPublicRequiredNonDegreeCourses: [],

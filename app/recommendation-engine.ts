@@ -1,4 +1,5 @@
-import { coursesShareIdentity, designationLookupKey, getCourseRoleEligibility, historicalCourseLike, isCourseApplicable, isCoreDegreeType, isProfessionalDegreeType, isPublicRequiredCourse, isEnglishCourse, uniqueCourses, type CourseDesignation, type HistoricalRecord } from './credit-model';
+import { coursesShareIdentity, designationLookupKey, getCourseRoleEligibility, historicalCourseLike, isCourseApplicable, isCoreDegreeType, isProfessionalDegreeType, isPublicRequiredCourse, isEnglishCourse, uniqueCourses, type CourseDesignation, type HistoricalRecord, type RecognitionSource } from './credit-model';
+import type { SourceStatus } from './source-reconciliation';
 import { isPlannedCourse } from './course-data';
 import { calculateProgramGaps, courseOpportunity, getProgramChecks, type ProgramCourse, type ProgramGaps } from './program-rules';
 import type { ProgramPlan } from './program-plans';
@@ -13,6 +14,7 @@ export type CourseContribution = {
 export type RecommendationCandidate = {
   course: ProgramCourse; designation: CourseDesignation; reasons: string[];
   recognition: ReturnType<typeof getCourseRoleEligibility>;
+  recognitionSource?: RecognitionSource; sourceStatus?: SourceStatus;
   contribution: CourseContribution; opportunity: ReturnType<typeof courseOpportunity>;
   verificationRequired: boolean; verificationReasons: string[];
 };
@@ -113,11 +115,14 @@ const gapLabels = {
 function makeCandidate(course: ProgramCourse, context: Context, before: ReturnType<typeof stateFor>, prior: RecommendationCandidate[]) {
   const recognition = getCourseRoleEligibility(course, context.plan);
   const candidate: RecommendationCandidate = { course, designation: proposedDesignation(course, context.plan, before.gaps), recognition,
+    recognitionSource: recognition.recognitionSource,
+    sourceStatus: recognition.sourceStatus,
     opportunity: courseOpportunity(course), contribution: {} as CourseContribution, reasons: [],
-    verificationRequired: !validSchedule(course) || recognition.status === 'approval_required' || recognition.status === 'verification',
+    verificationRequired: !validSchedule(course) || recognition.status === 'approval_required' || recognition.status === 'verification' || recognition.sourceStatus === 'conflict',
     verificationReasons: [
       ...(!validSchedule(course) ? ['排课未知：仅供培养规划，不能确认整套方案无时间冲突'] : []),
       ...(['approval_required', 'verification'].includes(recognition.status) ? ['请查阅正式材料核对学位属性'] : []),
+      ...(recognition.sourceStatus === 'conflict' ? ['课程编号与类别字段存在来源冲突'] : []),
     ],
   };
   const after = stateFor(context, [...prior, candidate]);

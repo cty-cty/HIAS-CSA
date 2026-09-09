@@ -1,12 +1,33 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { PROGRAM_PLANS } from '../app/program-plans.ts';
+import {
+  COLLEGE_DIRECTORY,
+  FALLBACK_PROGRAM_PLAN_COLLEGE,
+  getProgramPlanCollege,
+  groupProgramPlansByCollege,
+  PROGRAM_PLANS,
+} from '../app/program-plans.ts';
+
+assert.deepEqual(
+  COLLEGE_DIRECTORY.map((entry) => entry.label),
+  [
+    '基础物理与数学科学学院',
+    '物理与光电工程学院',
+    '化学与材料科学学院',
+    '生命与健康科学学院',
+    '药物科学与技术学院',
+    '环境学院',
+    '分子医学院',
+    '智能科学与技术学院',
+  ],
+);
 import {
   calculateCreditSummary,
   getCanonicalCourseId,
   getCourseRequirementType,
   getCourseRoleEligibility,
+  reconcileCourseSources,
 } from '../app/credit-model.ts';
 import {
   calculateProgramGaps,
@@ -57,6 +78,32 @@ assert.ok(
 const optical = PROGRAM_PLANS.find((plan) => plan.id === 'optical-master');
 const ai = PROGRAM_PLANS.find((plan) => plan.id === 'ai-master');
 assert.ok(optical && ai);
+const builtInCollegeGroups = groupProgramPlansByCollege(PROGRAM_PLANS);
+assert.equal(
+  builtInCollegeGroups.find(([college]) => college === '物理与光电工程学院')?.[1].length,
+  PROGRAM_PLANS.length,
+);
+assert.equal(
+  getProgramPlanCollege({ college: undefined }),
+  FALLBACK_PROGRAM_PLAN_COLLEGE,
+);
+assert.equal(
+  getProgramPlanCollege({ college: '物光学院' }),
+  '物理与光电工程学院',
+);
+const futureCollegePlan = {
+  ...optical,
+  id: 'future-chemistry-master',
+  label: '化学工程 · 专硕',
+  program: '化学工程',
+  college: '化学与化工学院',
+};
+assert.equal(
+  groupProgramPlansByCollege([...PROGRAM_PLANS, futureCollegePlan]).find(
+    ([college]) => college === '化学与化工学院',
+  )?.[1][0].program,
+  '化学工程',
+);
 
 function course(
   name,
@@ -92,18 +139,44 @@ assert.equal(
   'ineligible',
 );
 
-const listedCore = course('高等光学原理', '专业核心课', 3, '00000000000001');
+const listedCore = course('高等光学原理', '专业核心课', 3, '00000000000002');
 const listedProfessional = course('激光原理', '专业课', 3, '00000000000003');
-const crossMajor = course('其它专业核心课', '专业核心课', 3, '00000000000901');
+const crossMajor = course('其它专业核心课', '专业核心课', 3, '00000000000902');
 assert.equal(getCourseRoleEligibility(listedCore, optical).status, 'eligible');
+assert.equal(
+  getCourseRoleEligibility(
+    course('明确共享课程', '专业课', 2, '00000000000003'),
+    { ...optical, sharedCourses: ['明确共享课程'] },
+  ).recognitionSource,
+  'explicit_shared',
+);
 assert.equal(
   getCourseRoleEligibility(crossMajor, optical).status,
   'approval_required',
 );
+assert.equal(
+  getCourseRoleEligibility(
+    course('无依据跨领域课程', '专业课', 2, '00000000000903', '法学'),
+    optical,
+  ).status,
+  'verification',
+);
+const classificationConflict = course(
+  '属性冲突课程',
+  '专业课',
+  2,
+  '00000000000001',
+);
+assert.equal(reconcileCourseSources(classificationConflict).sourceStatus, 'conflict');
+assert.equal(
+  getCourseRoleEligibility(classificationConflict, optical).status,
+  'verification',
+);
+assert.equal(getCourseRequirementType(classificationConflict, 'degree', optical), 'pending');
 
 const fourDegreeCourses = [
   listedCore,
-  course('光电工程', '专业核心课', 3, '00000000000101'),
+  course('光电工程', '专业核心课', 3, '00000000000102'),
   listedProfessional,
   course('红外半导体器件仿真与测试', '专业课', 3, '00000000000103'),
 ];
@@ -181,8 +254,8 @@ const expanded = generateRecommendationPlans({
 assert.ok(expanded.some((p) => p.gaps.approvalRequiredDegreeCredits === 3 && p.candidates[0].designation === 'degree'));
 
 const aiCourses = [
-  course('自然语言处理', '专业核心课', 3, '00000000000001'),
-  course('人工智能的数学基础与应用', '专业核心课', 2, '00000000000101'),
+  course('自然语言处理', '专业核心课', 3, '00000000000002'),
+  course('人工智能的数学基础与应用', '专业核心课', 2, '00000000000102'),
 ];
 const aiDesignations = Object.fromEntries(
   aiCourses.map((item) => [`family:${getCanonicalCourseId(item)}`, 'degree']),
@@ -229,7 +302,7 @@ assert.equal(publicSystemSummary.ordinaryPublicElectiveCredits, 0);
 assert.equal(publicSystemSummary.innovationCredits, 1);
 
 const noWeekOverlap = [
-  course('高等光学原理', '专业核心课', 3, '00000000000103', '电子科学与技术', [
+  course('高等光学原理', '专业核心课', 3, '00000000000102', '电子科学与技术', [
     { dayIndex: 1, start: 1, end: 3, weeks: [2, 3] },
   ]),
   course('激光原理', '专业课', 3, '00000000000203', '电子科学与技术', [
@@ -239,7 +312,7 @@ const noWeekOverlap = [
 const recommendationPlans = generateRecommendationPlans({
   courses: [
     ...noWeekOverlap,
-    course('光电工程', '专业核心课', 3, '00000000000301', '电子科学与技术', [
+      course('光电工程', '专业核心课', 3, '00000000000302', '电子科学与技术', [
       { dayIndex: 2, start: 1, end: 2, weeks: [1, 2] },
     ]),
   ],

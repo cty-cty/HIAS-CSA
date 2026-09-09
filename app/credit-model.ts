@@ -3,7 +3,15 @@ import {
   getAcademicAllowedSubjects,
   getGraduateProgramKind,
   getGraduateProgramMapping,
+  getRelatedProfessionalPrograms,
 } from './graduate-program-mapping';
+import {
+  reconcileCourseSources,
+  type SourceConflict,
+  type SourceStatus,
+} from './source-reconciliation';
+
+export { reconcileCourseSources } from './source-reconciliation';
 
 export type CourseDesignation = 'degree' | 'non-degree' | 'unset';
 export type DegreeRole = 'degree' | 'nonDegree';
@@ -53,7 +61,18 @@ export type DegreeEligibilityStatus =
 export type DegreeEligibility = {
   status: DegreeEligibilityStatus;
   reason: string;
+  recognitionSource?: RecognitionSource;
+  sourceStatus?: SourceStatus;
+  sourceConflict?: SourceConflict;
 };
+
+export type RecognitionSource =
+  | 'explicit_program'
+  | 'same_first_level'
+  | 'explicit_shared'
+  | 'approved_related'
+  | 'approval_required'
+  | 'verification';
 
 export type CourseClassification = {
   requirementType: CourseRequirementType;
@@ -211,18 +230,30 @@ export function getDegreeEligibility(
   >,
   plan?: ProgramPlan,
 ): DegreeEligibility {
+  const reconciliation = reconcileCourseSources(course);
+  if (reconciliation.sourceStatus === 'conflict') {
+    return {
+      status: 'verification',
+      reason: '课程编号类别与 category 字段不一致，需核对正式课程材料后再确认学位属性。',
+      recognitionSource: 'verification',
+      sourceStatus: 'conflict',
+      sourceConflict: reconciliation.sourceConflict,
+    };
+  }
   if (!isDegreeEligibleByCode(course)) {
     return {
       status: getCourseCodeCategory(course.officialCode || course.code) === 'unknown' &&
         !['公共必修课', '公共选修课', ...NON_DEGREE_ONLY_CATEGORIES].includes(course.category)
         ? 'verification' : 'ineligible',
       reason: '请根据课程官方类型核对学位资格；明确的非学位类型不能作为专业学位课。',
+      recognitionSource: 'verification',
     };
   }
   if (!plan) {
     return {
       status: 'verification',
       reason: '尚未匹配培养方向，学位属性待核验。',
+      recognitionSource: 'verification',
     };
   }
 
@@ -232,6 +263,7 @@ export function getDegreeEligibility(
     return {
       status: 'verification',
       reason: '培养方向未在研究生专业映射表中匹配，暂不能自动核定学位课范围。',
+      recognitionSource: 'verification',
     };
   }
 
@@ -249,11 +281,13 @@ export function getDegreeEligibility(
       return {
         status: 'eligible',
         reason: `属于一级学科“${mapping.firstLevel}”及其已映射二级学科范围。`,
+        recognitionSource: 'same_first_level',
       };
     }
     return {
       status: 'verification',
       reason: `课程学科“${course.subject}”未在该一级学科的映射范围内，需核对培养方案或学院认定。`,
+      recognitionSource: 'verification',
     };
   }
 
@@ -261,18 +295,42 @@ export function getDegreeEligibility(
     [...plan.coreCourses, ...plan.professionalCourses].some(
       (name) => normalizeCourseName(name) === normalizeCourseName(course.name),
     );
+  const isExplicitlyShared = (plan.sharedCourses ?? []).some(
+    (name) => normalizeCourseName(name) === normalizeCourseName(course.name),
+  );
+  if (isExplicitlyShared) {
+    return {
+      status: 'eligible',
+      recognitionSource: 'explicit_shared',
+      reason: `属于“${plan.program}”培养方案明确共享的核心课或专业课。`,
+    };
+  }
   if (!isListed) {
     if ((course.program && [plan.program, plan.code].some((value) => course.program?.includes(value))) ||
       course.subject.split(/[、,，;；/]/).some((subject) => subject.trim() === plan.program)) {
-      return { status: 'verification', reason: `课表标注属于${plan.program}，但学院培养方案课程池未列出，请核对正式材料。` };
+      return { status: 'verification', recognitionSource: 'verification', reason: `课表标注属于${plan.program}，但学院培养方案课程池未列出，请核对正式材料。` };
+    }
+    const relatedPrograms = getRelatedProfessionalPrograms(plan);
+    const related = [course.program ?? '', ...course.subject.split(/[、,，;；/]/)]
+      .map((value) => value.trim())
+      .some((value) => relatedPrograms.has(value) ||
+        (plan.program === '光电信息工程' && value === '电子科学与技术'));
+    if (!related) {
+      return {
+        status: 'verification',
+        recognitionSource: 'verification',
+        reason: `课程未列入“${plan.program}”培养方案，且当前资料未提供明确的相关专业依据；请向学院和导师核验。`,
+      };
     }
     return {
       status: 'approval_required',
+      recognitionSource: 'approval_required',
       reason: `课程官方类别具备学位课资格，但未列入“${plan.program}”本专业培养方案课程池；建议查阅学校官网、学院培养方案和教务系统，核对是否可以设置为学位课。所有课程安排均建议与自己的导师确认是否合理。`,
     };
   }
   return {
     status: 'eligible',
+    recognitionSource: 'explicit_program',
     reason: `属于“${plan.program}”本专业培养方案列出的核心课或专业课。`,
   };
 }
@@ -300,26 +358,39 @@ export function getCourseRoleEligibility(
   >,
   plan?: ProgramPlan,
 ): DegreeEligibility {
+  const reconciliation = reconcileCourseSources(course);
+  if (reconciliation.sourceStatus === 'conflict') {
+    return {
+      status: 'verification',
+      reason: '课程编号类别与 category 字段不一致，需核对正式课程材料后再确认课程归属。',
+      recognitionSource: 'verification',
+      sourceStatus: 'conflict',
+      sourceConflict: reconciliation.sourceConflict,
+    };
+  }
   if (isEngineeringEthics(course)) {
     return {
       status: 'ineligible',
       reason: '《工程伦理》是公共必修非学位课，不能设置为学位课。',
+      recognitionSource: 'explicit_program',
     };
   }
   if (isHiasCourse(course)) {
     return {
       status: 'ineligible',
       reason: 'HIAS讲堂按公共选修课学分登记，不能设置为学位课。',
+      recognitionSource: 'explicit_program',
     };
   }
   if (isPublicRequiredCourse(course)) {
     if (isMastersPublicOutsideGeneralPhd(course, plan)) {
-      return { status: 'verification', reason: '学校须知第12页将该课程列为硕士、硕博连读与直博公共必修；不能自动替代普通博士的公共必修要求，其他用途请核对正式材料。' };
+      return { status: 'verification', recognitionSource: 'verification', reason: '学校须知第12页将该课程列为硕士、硕博连读与直博公共必修；不能自动替代普通博士的公共必修要求，其他用途请核对正式材料。' };
     }
     return {
       status: 'eligible',
       reason:
         '公共必修课可按培养方案归入公共必修学位课；特殊课程以明确规则为准。',
+      recognitionSource: 'explicit_program',
     };
   }
   if (isPublicElectiveCourse(course) || isNonDegreeOnly(course)) {
@@ -327,6 +398,7 @@ export function getCourseRoleEligibility(
       status: 'ineligible',
       reason:
         '公共选修课、研讨课、实验课、实践课和科学前沿讲座属于非学位课程。',
+      recognitionSource: 'explicit_program',
     };
   }
   return getDegreeEligibility(course, plan);
@@ -573,6 +645,9 @@ export function getCourseRequirementType(
   designation: CourseDesignation | 'unknown',
   plan?: ProgramPlan,
 ): CourseRequirementType {
+  if (reconcileCourseSources(course).sourceStatus === 'conflict') {
+    return 'pending';
+  }
   if (isEngineeringEthics(course)) {
     return 'publicRequiredNonDegree';
   }
