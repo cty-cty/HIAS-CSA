@@ -1,0 +1,19 @@
+{
+  "app": "HIAS-CSA",
+  "version": 2,
+  "savedAt": "2026-09-08T00:00:00Z",
+  "activeTermId": "2026-fall",
+  "programPlanId": "physical-master",
+  "customDatasets": [],
+  "selectedByTerm": {"2026-fall": ["117", "115", "121", "48", "1"]},
+  "designationsByTerm": {"2026-fall": {
+    "family:280216030500MB001": "degree",
+    "family:280216010108MB001": "degree",
+    "family:english-degree-course": "degree",
+    "family:280216040200PX004": "non-degree",
+    "family:280216080900P1003": "degree"
+  }},
+  "programPlans": [],
+  "historicalRecords": [],
+  "englishExemptionStatus": "normal"
+}

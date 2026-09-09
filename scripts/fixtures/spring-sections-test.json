@@ -1,0 +1,29 @@
+{
+  "termId": "2027-spring",
+  "label": "2027 春季（仅本地导入测试，非学校课表）",
+  "audience": "合成验收数据，仅限 localhost 独立测试页；不能用于真实选课",
+  "courses": [
+    {
+      "id": "qa-fpga-01", "code": "280216085408P3005-01", "officialCode": "280216085408P3005-01",
+      "englishName": "", "teachingMode": "",
+      "canonicalCourseId": "280216085408P3005", "name": "FPGA电路软硬件设计-01班",
+      "category": "专业课", "level": "硕博通用课程", "subject": "光电信息工程",
+      "college": "物理与光电工程学院", "credits": 2.5, "hours": "50",
+      "teacher": "测试教师（合成）", "examMode": "测试考核（合成）", "capacity": 20, "enrolled": 3,
+      "scheduleStatus": "confirmed", "dataStatus": "official_schedule",
+      "source": "合成软件测试夹具：编号班次、容量和排课均不代表2027春季真实安排",
+      "schedules": [{"day":"周二","dayIndex":1,"start":5,"end":7,"weeks":[2,3],"weeksText":"第2-3周","periodText":"周二(5-7)","room":"测试教室（合成）"}]
+    },
+    {
+      "id": "qa-fpga-02", "code": "280216085408P3005-02", "officialCode": "280216085408P3005-02",
+      "englishName": "", "teachingMode": "",
+      "canonicalCourseId": "280216085408P3005", "name": "FPGA电路软硬件设计-02班",
+      "category": "专业课", "level": "硕博通用课程", "subject": "光电信息工程",
+      "college": "物理与光电工程学院", "credits": 2.5, "hours": "50",
+      "teacher": "测试教师（合成）", "examMode": "测试考核（合成）", "capacity": 20, "enrolled": 4,
+      "scheduleStatus": "confirmed", "dataStatus": "official_schedule",
+      "source": "合成软件测试夹具：编号班次、容量和排课均不代表2027春季真实安排",
+      "schedules": [{"day":"周三","dayIndex":2,"start":5,"end":7,"weeks":[2,3],"weeksText":"第2-3周","periodText":"周三(5-7)","room":"测试教室（合成）"}]
+    }
+  ]
+}

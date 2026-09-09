@@ -1,17 +1,44 @@
+export type StudentTrack =
+  | 'masters'
+  | 'general_phd'
+  | 'direct_phd'
+  | 'combined_phd';
+
+export type ProgramSpecialRule =
+  | {
+      id: string;
+      type: 'atLeastOneOf' | 'minimumCourseCount';
+      minimum: number;
+      courseNames: string[];
+      courseType?: 'core' | 'professional';
+      allowedLevels?: string[];
+      degreeOnly?: boolean;
+      label: string;
+    }
+  | {
+      id: string;
+      type: 'requiredCourse';
+      courseNames: string[];
+      courseType?: 'core' | 'professional';
+      allowedLevels?: string[];
+      degreeOnly?: boolean;
+      label: string;
+    };
+
 export type ProgramPlan = {
   id: string;
   label: string;
   degree: string;
   program: string;
   code: string;
-  totalCredits: number;
+  totalCredits: number | null;
   publicRequiredCredits: number | null;
   publicRequiredDegreeCredits?: number | null;
   publicRequiredNonDegreeCredits?: number | null;
   requiredPublicRequiredNonDegreeCourses?: string[];
   degreeCourseCredits: number;
   professionalNonDegreeCredits: number | null;
-  publicElectiveCredits: number;
+  publicElectiveCredits: number | null;
   innovationCredits: number | null;
   coreMinimum: number;
   professionalMinimum: number;
@@ -20,6 +47,10 @@ export type ProgramPlan = {
   source?: string;
   updatedAt?: string;
   note?: string;
+  /** 新字段均为可选，保证旧版本地方案和备份仍可读取。 */
+  studentTrack?: StudentTrack;
+  specialRules?: ProgramSpecialRule[];
+  degreeStructureStatus?: 'confirmed' | 'verification';
 };
 
 const PHYSICAL_ELECTRONICS_CORE = [
@@ -58,6 +89,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     innovationCredits: null,
     coreMinimum: 2,
     professionalMinimum: 2,
+    studentTrack: 'masters',
     coreCourses: PHYSICAL_ELECTRONICS_CORE,
     professionalCourses: PHYSICAL_ELECTRONICS_PROFESSIONAL,
   },
@@ -78,6 +110,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     innovationCredits: 1,
     coreMinimum: 2,
     professionalMinimum: 2,
+    studentTrack: 'masters',
     coreCourses: [
       '集成与微纳光子学',
       '高等光学原理',
@@ -99,6 +132,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
       '数字图像处理',
       '非线性光学导论',
     ],
+    specialRules: [],
   },
   {
     id: 'ai-master',
@@ -117,6 +151,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     innovationCredits: 1,
     coreMinimum: 2,
     professionalMinimum: 2,
+    studentTrack: 'masters',
     coreCourses: ['自然语言处理', '高级人工智能', '人工智能的数学基础与应用'],
     professionalCourses: [
       '并行计算与实现技术',
@@ -125,6 +160,17 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
       '智能物联网技术及应用',
     ],
     note: '核心课程至少选2门，其中至少1门须从《高级人工智能》《自然语言处理》中选择；专业课不包括研讨课和实验课。',
+    specialRules: [
+      {
+        id: 'ai-core-one',
+        courseType: 'core',
+        type: 'atLeastOneOf',
+        minimum: 1,
+        courseNames: ['高级人工智能', '自然语言处理'],
+        degreeOnly: true,
+        label: '《高级人工智能》《自然语言处理》至少1门作为核心学位课',
+      },
+    ],
   },
   {
     id: 'materials-master',
@@ -143,6 +189,7 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
     innovationCredits: 1,
     coreMinimum: 2,
     professionalMinimum: 2,
+    studentTrack: 'masters',
     coreCourses: [
       '有机合成精细化工基础',
       '现代有机波谱分析与运用',
@@ -162,22 +209,44 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
   },
   {
     id: 'physical-doctor',
-    label: '物理电子学 · 博士',
+    label: '物理电子学 · 普通招考博士',
     degree: '博士',
     program: '物理电子学',
     code: '0809 电子科学与技术',
-    totalCredits: 38,
-    publicRequiredCredits: 11,
-    publicRequiredDegreeCredits: 11,
+    totalCredits: null,
+    publicRequiredCredits: 5,
+    publicRequiredDegreeCredits: 5,
     publicRequiredNonDegreeCredits: 0,
     requiredPublicRequiredNonDegreeCourses: [],
-    degreeCourseCredits: 16,
+    degreeCourseCredits: 4,
     professionalNonDegreeCredits: null,
-    publicElectiveCredits: 2,
+    publicElectiveCredits: null,
     innovationCredits: null,
-    coreMinimum: 2,
-    professionalMinimum: 2,
+    coreMinimum: 0,
+    professionalMinimum: 0,
     coreCourses: PHYSICAL_ELECTRONICS_CORE,
     professionalCourses: PHYSICAL_ELECTRONICS_PROFESSIONAL,
+    studentTrack: 'general_phd',
+    degreeStructureStatus: 'verification',
+    specialRules: [{
+      id: 'general-phd-own-course', type: 'minimumCourseCount', minimum: 1,
+      courseNames: [...PHYSICAL_ELECTRONICS_CORE, ...PHYSICAL_ELECTRONICS_PROFESSIONAL],
+      degreeOnly: true, allowedLevels: ['硕博通用', '博士'],
+      label: '至少1门本学科硕博通用或博士专属核心/专业课作为学位课',
+    }],
+    note:
+      '学校须知第10、22页：普博公共必修5学分，专业学位至少4学分，并至少1门本学科硕博通用或博士专属核心/专业学位课。学院完整要求待核验，不套用2+2。',
   },
+  ...(['direct_phd', 'combined_phd'] as const).map((studentTrack): ProgramPlan => ({
+    id: 'physical-' + studentTrack,
+    label: '物理电子学 · ' + (studentTrack === 'direct_phd' ? '直博' : '硕博连读'),
+    degree: '博士', program: '物理电子学', code: '0809 电子科学与技术',
+    studentTrack, totalCredits: null,
+    publicRequiredCredits: 11, publicRequiredDegreeCredits: 11,
+    publicRequiredNonDegreeCredits: 0, requiredPublicRequiredNonDegreeCourses: [],
+    degreeCourseCredits: 16, professionalNonDegreeCredits: null,
+    publicElectiveCredits: 2, innovationCredits: null, coreMinimum: 2, professionalMinimum: 2,
+    coreCourses: PHYSICAL_ELECTRONICS_CORE, professionalCourses: PHYSICAL_ELECTRONICS_PROFESSIONAL,
+    note: '学校须知第10、22页及学院物理电子学课程汇总：专业学位至少16学分，核心2门、专业2门分别核对。总学分及学院补充要求待核验；博士英语认定须结合实际培养阶段。',
+  })),
 ];
