@@ -89,6 +89,8 @@ import {
   type ProgramPlan,
 } from '@/app/program-plans';
 import { isPlannedCourse, mergeCourseRows, reconcileCourseUpdate } from '@/app/course-data';
+import { correctKnownRooms } from '@/app/course-corrections';
+import { FeedbackDialog, type FeedbackContext } from '@/app/feedback';
 import {
   calculateCreditSummary,
   courseFamilyKey,
@@ -1010,6 +1012,8 @@ export default function CourseExplorer({
     }
   }, [view]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [feedbackContext, setFeedbackContext] = useState<FeedbackContext | null>(null);
+  const [exportReminderOpen, setExportReminderOpen] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [sportsLimitOpen, setSportsLimitOpen] = useState(false);
@@ -1064,6 +1068,7 @@ export default function CourseExplorer({
     createTermTemplateDataset(activeTermId, defaultCourses) ??
     createTermTemplateDataset(DEFAULT_TERM_ID, defaultCourses)!;
   const isDefaultTerm = activeDataset.id === DEFAULT_TERM_ID;
+  const roomCorrection = correctKnownRooms(activeDataset.id, activeDataset.courses);
   const activeTermDisplayLabel =
     activeDataset.shortLabel || activeDataset.label;
   const audienceLabel =
@@ -2508,6 +2513,10 @@ export default function CourseExplorer({
   }
 
   function exportSelected() {
+    if (selectedCourses.length) setExportReminderOpen(true);
+  }
+
+  function downloadSelectedCsv() {
     const header = [
       '课程名称',
       '星期',
@@ -2920,8 +2929,20 @@ export default function CourseExplorer({
         </header>
         <div className="context-caption">
           <span>{audienceLabel} · 非官方模拟选课</span>
+          <button type="button" onClick={() => setFeedbackContext({ term: activeDataset.label })}>意见反馈</button>
           <span>最终课程安排以学校正式通知为准</span>
         </div>
+        {storageReady && roomCorrection.changes.length > 0 && (
+          <div className="workspace-feedback">
+            <p>当前导入数据仍使用旧教室：《光电子材料与器件》13-110 → 13-312（2026-09-11 更新）。</p>
+            <p>只更新这门课的旧教室，保留时间、周次、已选课程和学位属性。</p>
+            <Button variant="outline" onClick={() => {
+              setCustomDatasets((datasets) => datasets.map((dataset) => dataset.id === activeDataset.id
+                ? { ...dataset, courses: correctKnownRooms(dataset.id, dataset.courses).courses } : dataset));
+              setDataMessage('已更新《光电子材料与器件》教室为 13-312；已有选课和学位属性已保留。');
+            }}>应用教室更新</Button>
+          </div>
+        )}
         <Tabs
           className="workspace-tabs"
           value={view}
@@ -4955,6 +4976,22 @@ export default function CourseExplorer({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <FeedbackDialog key={JSON.stringify(feedbackContext)} context={feedbackContext} onClose={() => setFeedbackContext(null)} />
+      <AlertDialog open={exportReminderOpen} onOpenChange={setExportReminderOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>导出前请留意课程调整</AlertDialogTitle>
+            <AlertDialogDescription>
+              课程可能因选课人数及其他教学安排调整上课时间和教室。请及时查看任课教师、学院及教务系统的最新通知，并按实际通知的时间和地点上课。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {roomCorrection.changes.length > 0 && <p className="text-sm text-amber-700">当前仍有旧教室信息，建议返回核对并应用页面上的教室更新后再导出。</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel>返回核对</AlertDialogCancel>
+            <AlertDialogAction onClick={downloadSelectedCsv}>继续导出</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -5299,6 +5336,10 @@ export default function CourseExplorer({
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-6 p-6">
+                <Button variant="outline" onClick={() => {
+                  setFeedbackContext({ term: activeDataset.label, courseName: detailCourse.name, courseCode: formatCourseCode(detailCourse) });
+                  setDetailCourse(null);
+                }}>反馈课程信息</Button>
                 <div className="grid grid-cols-2 gap-3">
                   {(
                     [

@@ -5,6 +5,18 @@ import { calculateCreditSummary, designationLookupKey, coursesShareIdentity, get
 import { calculateProgramGaps, evaluateSpecialRules, courseOpportunity, getProgramChecks } from '../app/program-rules.ts';
 import { generateRecommendationPlans, schedulesConflict } from '../app/recommendation-engine.ts';
 import { mergeCourseRows, reconcileCourseUpdate } from '../app/course-data.ts';
+import { correctKnownRooms } from '../app/course-corrections.ts';
+
+const oldRoomCourse = { id: 'custom-id', code: '280216085408P2005', name: '光电子材料与器件', schedules: [{ room: '13-110', weeks: [3, 5], start: 1 }] };
+const roomFixed = correctKnownRooms('2026-fall', [oldRoomCourse]);
+assert.equal(roomFixed.courses[0].schedules[0].room, '13-312');
+assert.equal(roomFixed.courses[0].id, oldRoomCourse.id);
+assert.deepEqual(roomFixed.courses[0].schedules[0].weeks, [3, 5]);
+assert.equal(oldRoomCourse.schedules[0].room, '13-110');
+assert.equal(correctKnownRooms('2027-spring', [oldRoomCourse]).changes.length, 0);
+assert.equal(correctKnownRooms('2026-fall', [{ ...oldRoomCourse, code: 'other' }]).changes.length, 0);
+assert.equal(correctKnownRooms('2026-fall', [{ ...oldRoomCourse, schedules: [{ room: '13-315' }] }]).changes.length, 0);
+assert.equal(correctKnownRooms('2026-fall', roomFixed.courses).changes.length, 0);
 
 const optical = PROGRAM_PLANS.find((p) => p.id === 'optical-master');
 const ai = PROGRAM_PLANS.find((p) => p.id === 'ai-master');
