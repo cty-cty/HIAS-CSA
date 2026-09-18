@@ -147,7 +147,7 @@ export function generateRecommendationPlans(context: Context & { courses: Progra
   const known = [...initial.selectedCourses, ...context.historicalRecords.filter((r) => r.credits > 0).map(historicalCourseLike)];
   const pool = context.courses.filter((course) => isCourseApplicable(course, context.plan) &&
     !context.excludedCourseIds?.includes(course.id) && !known.some((c) => coursesShareIdentity(c, course)) &&
-    !(context.exemptionStatus === 'approved' && context.plan.studentTrack !== 'general_phd' && isEnglishCourse(course)));
+    !(context.exemptionStatus === 'approved' && isEnglishCourse(course)));
   const objectives: Array<[RecommendationObjective, string]> = [['requirements', '推荐方案'], ['balanced', '均衡方案'], ['concentrated', '时间集中方案']];
   const results: RecommendationPlan[] = [];
   for (const [objective, label] of objectives) {

@@ -1875,7 +1875,7 @@ button {
 
 .history-record-list > div {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 0.55rem;
   border-top: 1px dashed #e3ebe7;
@@ -4284,6 +4284,12 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .degree-rule-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .guide-progress .requirement-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

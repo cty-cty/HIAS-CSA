@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { PROGRAM_PLANS } from '../app/program-plans.ts';
+import { calculateCreditSummary, doctoralProfessionalLevel, getCourseRoleEligibility, getPlanCourseCounts, designationLookupKey } from '../app/credit-model.ts';
+import { calculateProgramGaps, evaluateSpecialRules } from '../app/program-rules.ts';
+import { lectureGroups, recognizedLectureHistory, lectureAcademicYear } from '../app/lecture-records.ts';
+const spring = JSON.parse(fs.readFileSync('app/courses-spring.json','utf8'));
+const fall = JSON.parse(fs.readFileSync('app/courses.json','utf8'));
+const masters = PROGRAM_PLANS.find(p=>p.id==='optical-master');
+const base = {selectedCourses:[],historicalRecords:[],designations:{},exemptionStatus:'normal',plan:masters,termLabel:'2026 秋季'};
+const history = c=>({id:c.id,term:'2025秋',courseName:c.name,courseCode:c.code,credits:c.credits,level:c.level,category:c.category,subject:c.subject,designation:'degree',module:'regular',courseCount:1});
+const common=fall.find(c=>c.name==='半导体光谱学导论');
+const magnetic=spring.find(c=>c.name==='磁性材料');
+const publicCourses=[...fall.filter(c=>/自然辩证法概论-01班|新时代中国特色社会主义理论与实践-01班|英语A-02班/.test(c.name)),...spring.filter(c=>['博士学位英语','中国马克思主义与当代','学术道德与学术写作规范'].includes(c.name))];
+for(const plan of PROGRAM_PLANS.filter(p=>p.studentTrack?.endsWith('_phd'))){
+  assert.equal(plan.totalCredits,38);assert.equal(plan.publicRequiredDegreeCredits,11);assert.equal(plan.degreeCourseCredits,16);
+  assert.equal(calculateCreditSummary({...base,plan,selectedCourses:publicCourses}).publicRequiredDegreeCredits,11);
+  assert.equal(calculateCreditSummary({...base,plan,historicalRecords:publicCourses.map(history)}).publicRequiredDegreeCredits,11);
+  assert.equal(calculateCreditSummary({...base,plan,selectedCourses:[magnetic]}).estimatedCredits,0);
+  assert.equal(calculateCreditSummary({...base,plan,historicalRecords:[history(magnetic)]}).estimatedCredits,0);
+  assert.equal(calculateCreditSummary({...base,plan,historicalRecords:[history(common)]}).professionalDegreeCredits,3);
+  const unknown={...common,code:'',officialCode:null,level:undefined};
+  assert.equal(doctoralProfessionalLevel(unknown,plan),'verification');
+  assert.equal(getCourseRoleEligibility(unknown,plan).status,'verification');
+  assert.equal(calculateCreditSummary({...base,plan,historicalRecords:[history(unknown)]}).estimatedCredits,0);
+  assert.equal(getPlanCourseCounts({courses:[unknown],historicalRecords:[],designations:{[designationLookupKey(unknown)]:'degree'},plan}).coreCount,0);
+  assert.equal(doctoralProfessionalLevel({...common,level:undefined},plan),'eligible'); // code P
+  assert.equal(calculateCreditSummary({...base,plan,selectedCourses:[spring.find(c=>c.name==='硕士学位英语')]}).publicRequiredDegreeCredits,3);
+  assert.equal(calculateCreditSummary({...base,plan,selectedCourses:[common],historicalRecords:[history(unknown)],designations:{[designationLookupKey(common)]:'degree'}}).professionalDegreeCredits,3);
+  assert.equal(getPlanCourseCounts({courses:[common],historicalRecords:[history(unknown)],designations:{[designationLookupKey(common)]:'degree'},plan}).coreCount,1);
+}
+const phd=PROGRAM_PLANS.find(p=>p.studentTrack==='general_phd');
+assert.equal(evaluateSpecialRules({...base,plan:phd,historicalRecords:[history(common)]})[0].satisfied,true);
+assert.equal(calculateProgramGaps({...base,plan:phd}).coreTarget,null);
+const seven={...fall[0],credits:7};
+const fallGaps=calculateProgramGaps({...base,selectedCourses:[seven],exemptionStatus:'approved'});
+assert.equal(fallGaps.semesterCredits,10);assert.equal(fallGaps.semesterCreditGap,0);
+const springGaps=calculateProgramGaps({...base,termLabel:'2027 春季',selectedCourses:[seven],exemptionStatus:'approved'});
+assert.equal(springGaps.semesterCredits,7);assert.equal(springGaps.semesterCreditGap,3);
+const english=publicCourses.find(c=>c.name.startsWith('英语'));
+assert.equal(calculateProgramGaps({...base,selectedCourses:[seven,english],exemptionStatus:'approved'}).semesterCredits,10);
+assert.equal(calculateCreditSummary({...base,selectedCourses:[english],historicalRecords:[history(english)],exemptionStatus:'approved'}).estimatedCredits,3);
+assert.equal(lectureAcademicYear('2026-fall'),'2026-2027');assert.equal(lectureAcademicYear('2027-spring'),'2026-2027');
+const attend=(count,id='a',term='2026-fall',kind='hias')=>({id,term,courseName:kind==='hias'?'HIAS讲堂':'科学前沿讲座',courseCode:kind,credits:count/10,hours:count*2,attendanceCount:count,category:kind==='hias'?'公共选修课':'科学前沿讲座',designation:'non-degree',module:kind==='hias'?'hias':'regular',courseCount:0});
+for(const [count,expected] of [[9,0],[10,1],[19,1],[20,2],[100,10]]){
+  const record=attend(count), before=JSON.stringify(record);
+  assert.equal(lectureGroups([record])[0].estimatedCredits,expected);
+  assert.equal(calculateCreditSummary({...base,historicalRecords:[record]}).estimatedCredits,0);
+  const approved={...record,lectureStatus:'recognized'};
+  assert.equal(calculateCreditSummary({...base,historicalRecords:[approved]}).publicElectiveCredits,expected);
+  assert.equal(JSON.stringify(record),before);
+}
+const split=[attend(5,'a','2026-fall'),attend(5,'b','2027-spring')];
+assert.equal(lectureGroups(split).length,1);assert.equal(lectureGroups(split)[0].estimatedCredits,1);
+assert.equal(lectureGroups([split[0],attend(5,'c','2027-fall')]).reduce((s,g)=>s+g.estimatedCredits,0),0);
+assert.equal(lectureGroups([split[0],attend(5,'c','2026-fall','frontier')]).reduce((s,g)=>s+g.estimatedCredits,0),0);
+const confirmed=['2025-fall','2026-fall'].map((term,i)=>({...attend(10,String(i),term,'frontier'),lectureStatus:'recognized'}));
+assert.equal(calculateCreditSummary({...base,historicalRecords:confirmed}).professionalElectiveCredits,2);
+assert.equal(calculateCreditSummary({...base,historicalRecords:confirmed}).publicElectiveCredits,0);
+assert.equal(recognizedLectureHistory([attend(20,'unknown','学期待补充')]).length,0);
+assert.equal(spring.find(c=>c.name==='量子光学').teacher,'孙远');
+assert.equal(magnetic.teacher,'Saqib');
+assert.equal(spring.find(c=>c.name==='FPGA电路软硬件设计').examMode,'');
+assert.equal(fall.find(c=>c.name==='主被动光谱探测技术').credits,2.5);
+console.log('2026-09-17确认规则通过：博士三类/历史层次/公共必修/秋春免修/讲座分学年分类型/原记录保留/数据修正。');

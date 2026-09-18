@@ -59,7 +59,7 @@ assert.equal(calculateCreditSummary({...base, selectedCourses:[english], histori
 assert.equal(calculateProgramGaps({...base, selectedCourses:[english], exemptionStatus:'approved'}).semesterCredits,0);
 const exemptContext={...base,selectedCourses:[{...core,credits:7},english],exemptionStatus:'approved'};
 const exemptGaps=calculateProgramGaps(exemptContext);
-assert.equal(getProgramChecks({...exemptContext,gaps:exemptGaps,termId:'2027-spring',conflictCount:0}).find((check)=>check.id==='semester-minimum').severity,'verification');
+assert.equal(getProgramChecks({...exemptContext,gaps:exemptGaps,termId:'2027-spring',conflictCount:0}).find((check)=>check.id==='semester-minimum').severity,'must_handle');
 assert.equal(calculateCreditSummary({...base, selectedCourses: [spring.find((c) => c.name === '博士学位英语')]}).estimatedCredits,0);
 assert.equal(calculateCreditSummary({...base, historicalRecords: [historyOf(spring.find((c) => c.name === '博士学位英语'))]}).estimatedCredits,0);
 
@@ -127,12 +127,12 @@ assert.equal(phd.publicElectiveCredits,2);
 const masterPublic = autumn.filter((c)=>/自然辩证法概论-01班|新时代中国特色社会主义理论与实践-01班|英语A-02班/.test(c.name));
 assert.equal(masterPublic.length,3);
 const phdSwitched = calculateCreditSummary({...base,plan:phd,selectedCourses:masterPublic});
-assert.equal(phdSwitched.publicRequiredDegreeCredits,0);
+assert.equal(phdSwitched.publicRequiredDegreeCredits,6);
 assert.equal(phdSwitched.verificationDegreeCredits,0);
 assert.equal(phdSwitched.estimatedCredits,6);
-assert.ok(masterPublic.every((c)=>getCourseRoleEligibility(c,phd).status==='verification'));
+assert.ok(masterPublic.every((c)=>getCourseRoleEligibility(c,phd).status==='eligible'));
 assert.equal(calculateCreditSummary({...base,plan:phd,selectedCourses:masterPublic,exemptionStatus:'approved'}).estimatedCredits,6);
-assert.equal(calculateCreditSummary({...base,plan:phd,historicalRecords:masterPublic.map((c)=>historyOf(c))}).publicRequiredDegreeCredits,0);
+assert.equal(calculateCreditSummary({...base,plan:phd,historicalRecords:masterPublic.map((c)=>historyOf(c))}).publicRequiredDegreeCredits,6);
 assert.equal(calculateCreditSummary({...base,plan:phd,selectedCourses:spring.filter((c)=>['博士学位英语','中国马克思主义与当代','学术道德与学术写作规范'].includes(c.name))}).publicRequiredDegreeCredits,5);
 assert.equal(calculateProgramGaps({...base,plan:phd}).coreTarget,null);
 assert.equal(PROGRAM_PLANS.find((p)=>p.studentTrack==='direct_phd').degreeCourseCredits,16);

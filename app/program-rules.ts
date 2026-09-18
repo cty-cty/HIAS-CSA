@@ -6,6 +6,7 @@ import {
   courseFamilyKey,
   historicalCourseLike,
   isCourseApplicable,
+  doctoralProfessionalLevel,
   isEnglishCourse,
   uniqueCourses,
   getCanonicalCourseId,
@@ -108,6 +109,13 @@ function normalizedCourseName(name: string) {
   return name.replace(/[-—－]?\d+班$/, '').replace(/[\s　]+/g, '');
 }
 
+function matchesAllowedLevels(course: CourseLike, levels?: string[]) {
+  if (!levels?.length) return true;
+  const marker = (course.officialCode || course.code).replace(/-\d+$/, '').match(/^[1-4]\d{11}([MPD])[1-7BX]\d{3}$/)?.[1];
+  const level = course.level || ({ M: '硕士', P: '硕博通用', D: '博士' }[marker ?? ''] ?? '');
+  return levels.some((allowed) => level.includes(allowed));
+}
+
 function specialRuleCurrent(
   rule: ProgramSpecialRule,
   selectedCourses: ProgramCourse[],
@@ -119,7 +127,7 @@ function specialRuleCurrent(
   const matchedSelected = selectedCourses.filter((course) => {
     if (!names.has(normalizedCourseName(course.name))) return false;
     if (!isCourseApplicable(course, plan)) return false;
-    if (rule.allowedLevels?.length && !rule.allowedLevels.some((level) => course.level?.includes(level))) return false;
+    if (!matchesAllowedLevels(course, rule.allowedLevels)) return false;
     if (rule.degreeOnly && getCourseRoleEligibility(course, plan).status !== 'eligible') return false;
     if (rule.courseType === 'core' && !isCoreDegreeType(course)) return false;
     if (rule.courseType === 'professional' && !isProfessionalDegreeType(course)) return false;
@@ -132,8 +140,8 @@ function specialRuleCurrent(
     if (!names.has(normalizedCourseName(record.courseName))) return false;
     const course = historicalCourseLike(record);
     if (record.credits <= 0) return false;
-    // Old historical records do not store level; do not invent eligibility.
-    if (rule.allowedLevels?.length) return false;
+    if (!isCourseApplicable(course, plan)) return false;
+    if (!matchesAllowedLevels(course, rule.allowedLevels)) return false;
     if (rule.degreeOnly && getCourseRoleEligibility(course, plan).status !== 'eligible') return false;
     if (rule.courseType === 'core' && !isCoreDegreeType(course)) return false;
     if (rule.courseType === 'professional' && !isProfessionalDegreeType(course)) return false;
@@ -227,10 +235,11 @@ export function calculateProgramGaps({
     historicalRecords,
   });
   const semesterMinimumTarget = /秋|春/.test(termLabel) ? 10 : null;
-  const semesterCredits = uniqueCourses(currentSemesterCourses)
+  const semesterExemptionCredits = /秋|fall/i.test(termLabel) ? summary.approvedExemptionCredits : 0;
+  const semesterCredits = semesterExemptionCredits + uniqueCourses(currentSemesterCourses)
     .filter((course) => isSemesterMinimumCourse(course) && isCourseApplicable(course, plan) &&
       !historicalRecords.some((record) => record.credits > 0 && coursesShareIdentity(course, historicalCourseLike(record))) &&
-      !(exemptionStatus === 'approved' && plan.studentTrack !== 'general_phd' && isEnglishCourse(course)))
+      !(exemptionStatus === 'approved' && isEnglishCourse(course)))
     .reduce((sum, course) => sum + course.credits, 0);
   const structureVerified = plan.degreeStructureStatus !== 'verification';
   const coreTarget = structureVerified ? plan.coreMinimum : null;
@@ -251,7 +260,7 @@ export function calculateProgramGaps({
     totalCredits: summary.estimatedCredits,
     semesterCredits,
     semesterMinimumTarget,
-    semesterExemptionCredits: summary.approvedExemptionCredits,
+    semesterExemptionCredits,
     semesterCreditGap:
       semesterMinimumTarget === null
         ? 0
@@ -341,8 +350,8 @@ export function getProgramChecks({
 }) {
   const checks: ProgramCheck[] = [];
   if (duplicateCourseIds(selectedCourses).size) checks.push({ id: 'duplicate-courses', severity: 'must_handle', label: '重复教学班', detail: '同一课程只应保留一个教学班。' });
-  const inapplicable = selectedCourses.filter((course) => !isCourseApplicable(course, plan));
-  if (inapplicable.length) checks.push({ id: 'inapplicable-courses', severity: 'must_handle', label: '课程适用对象不匹配', detail: inapplicable.map((course) => course.name).join('、') + '未计入当前培养规划，请核对培养层次与适用学生类别。' });
+  const inapplicable = uniqueCourses([...selectedCourses, ...historicalRecords.map(historicalCourseLike)]).filter((course) => !isCourseApplicable(course, plan));
+  if (inapplicable.length) checks.push({ id: 'inapplicable-courses', severity: 'verification', label: '未计入培养学分的课程（记录保留）', detail: inapplicable.map((course) => `${course.name}（${doctoralProfessionalLevel(course, plan) === 'verification' ? '层次待核验' : '适用层次/对象不符'}）`).join('、') + '；不影响原选课及历史记录，请核对正式材料。' });
   if (conflictCount > 0) {
     checks.push({
       id: 'schedule-conflicts',
@@ -352,14 +361,11 @@ export function getProgramChecks({
     });
   }
   if (gaps.semesterCreditGap > 0) {
-    const exemptionUncertain = gaps.semesterExemptionCredits >= gaps.semesterCreditGap;
     checks.push({
       id: 'semester-minimum',
-      severity: exemptionUncertain ? 'verification' : 'must_handle',
-      label: exemptionUncertain ? '英语免修与学期最低学分口径待确认' : '本学期有效学分不足',
-      detail: exemptionUncertain
-        ? `不含免修的本学期有效学分为 ${formatNumber(gaps.semesterCredits)} / 10；另有免修 ${formatNumber(gaps.semesterExemptionCredits)} 学分。现有材料未明确免修是否计入学期最低要求，请向教务核对，暂不据此判定选课错误。`
-        : `当前有效学分 ${formatNumber(gaps.semesterCredits)} / 10，还差 ${formatNumber(gaps.semesterCreditGap)} 学分。${gaps.semesterExemptionCredits ? '即使计入英语免修仍未达到10学分；具体免修口径请向教务核对。' : ''}`,
+      severity: 'must_handle',
+      label: '本学期有效学分不足',
+      detail: `当前有效学分 ${formatNumber(gaps.semesterCredits)} / 10，还差 ${formatNumber(gaps.semesterCreditGap)} 学分。${gaps.semesterExemptionCredits ? '已包含获准英语免修的秋季贡献3学分，不重复计分。' : '获准硕士英语免修仅计入秋季最低要求，春季不重复增加。'}`,
     });
   }
   if (selectedCourses.filter((course) => course.subject === '体育学').length > 1) {

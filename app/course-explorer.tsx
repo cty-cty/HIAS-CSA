@@ -1,5 +1,9 @@
 'use client';
 
+import { isAttendanceRecord, lectureAcademicYear, lectureGroups, validHistoryExtensions } from './lecture-records';
+import { doctoralProfessionalLevel } from './credit-model';
+import { CreditDetails } from './credit-details';
+
 import {
   type ChangeEvent,
   useCallback,
@@ -93,6 +97,7 @@ import { correctKnownRooms } from '@/app/course-corrections';
 import { FeedbackDialog, type FeedbackContext } from '@/app/feedback';
 import {
   calculateCreditSummary,
+  historicalCourseLike,
   courseFamilyKey,
   coursesShareIdentity,
   designationLookupKey,
@@ -1029,6 +1034,7 @@ export default function CourseExplorer({
   const [pendingRecommendation, setPendingRecommendation] = useState<RecommendationPlan | null>(null);
   const [dataManagementMessage, setDataManagementMessage] = useState('');
   const [dataManagementError, setDataManagementError] = useState('');
+  const [lectureConfirmation, setLectureConfirmation] = useState<{ key: string; revoke: boolean } | null>(null);
   const [restorePreview, setRestorePreview] = useState<{
     payload: BackupPayload;
     summary: string[];
@@ -1041,10 +1047,12 @@ export default function CourseExplorer({
     category: '公共必修课',
     designation: 'unknown' as HistoricalRecord['designation'],
     module: 'unknown' as HistoricalModule,
+    level: '',
   });
   const [hiasDraft, setHiasDraft] = useState({
     term: '',
     attendanceCount: '',
+    kind: 'hias' as 'hias' | 'frontier',
   });
   const dataFileRef = useRef<HTMLInputElement>(null);
   const programPlanFileRef = useRef<HTMLInputElement>(null);
@@ -1302,7 +1310,7 @@ export default function CourseExplorer({
               typeof record.credits === 'number' &&
               Number.isFinite(record.credits) &&
               record.credits >= 0 &&
-              typeof record.category === 'string' &&
+              typeof record.category === 'string' && validHistoryExtensions(record) &&
               ['degree', 'non-degree', 'unknown'].includes(
                 record.designation,
               ) &&
@@ -1857,66 +1865,40 @@ export default function CourseExplorer({
   );
   const englishQualificationCredits = creditSummary.approvedExemptionCredits;
   const englishQualificationDetail =
-    activePlan.studentTrack === 'general_phd'
-      ? '当前为普通博士；保留原英语资格记录，但不套用硕士免修3学分。博士英语安排请根据正式材料确认。'
-      : englishExemptionStatus === 'approved'
+    englishExemptionStatus === 'approved'
       ? englishQualificationCredits > 0
-        ? `已计入公共必修学位课 +${formatCredits(englishQualificationCredits)} 学分，培养要求统计已同步。`
+        ? `已计入公共必修学位课 +${formatCredits(englishQualificationCredits)} 学分；计入秋季最低10学分，春季不重复增加。不替代博士学位英语。`
         : '已获得资格；历史英语课程已计入，免修免考学分不重复累计。'
       : '未计入英语免修免考学分，公共必修学位课不增加免修免考的 3 学分。';
-  const hiasHistorySummary = useMemo(() => {
-    const records = historicalRecords.filter(
-      (record) => record.module === 'hias',
-    );
-    const hours = records.reduce(
-      (sum, record) => sum + (record.hours ?? record.credits * 20),
-      0,
-    );
-    const attendanceCount = records.reduce(
-      (sum, record) =>
-        sum +
-        (record.attendanceCount ?? (record.hours ?? record.credits * 20) / 2),
-      0,
-    );
-    return {
-      attendanceCount,
-      hours,
-      credits: records.reduce((sum, record) => sum + record.credits, 0),
-    };
-  }, [historicalRecords]);
+  const lectureProgress = useMemo(() => lectureGroups(historicalRecords), [historicalRecords]);
+  const confirmingLecture = lectureProgress.find(group => group.key === lectureConfirmation?.key);
+  const historyToVerify = historicalRecords.filter(record =>
+    (isAttendanceRecord(record) && (!lectureAcademicYear(record.term) || record.lectureStatus === undefined)) ||
+    doctoralProfessionalLevel(historicalCourseLike(record), activePlan) === 'verification');
   const hiasPreview = useMemo(() => {
     const attendanceCount = Number(hiasDraft.attendanceCount);
     if (!Number.isInteger(attendanceCount) || attendanceCount <= 0) {
       return null;
     }
     const hours = attendanceCount * 2;
-    return { attendanceCount, hours, credits: hours / 20 };
+    return { attendanceCount, hours, credits: Math.floor(hours / 20) };
   }, [hiasDraft.attendanceCount]);
   const countedSelectedCourses = useMemo(() => {
-    const historicalCourses = historicalRecords.map((record) => ({
-      code: record.courseCode,
-      name: record.courseName,
-      subject: record.subject ?? '',
-    }));
+    const historicalCourses = creditSummary.historicalRecords.map(historicalCourseLike);
     return selectedCourses.filter(
       (course) =>
-        !(englishExemptionStatus === 'approved' && activePlan.studentTrack !== 'general_phd' && isEnglishCourse(course)) &&
+        isCourseApplicable(course, activePlan) &&
+        !(englishExemptionStatus === 'approved' && isEnglishCourse(course)) &&
         !historicalCourses.some((record) =>
           coursesShareIdentity(course, record),
         ),
     );
-  }, [englishExemptionStatus, activePlan.studentTrack, historicalRecords, selectedCourses]);
+  }, [englishExemptionStatus, activePlan, creditSummary.historicalRecords, selectedCourses]);
   const countedProgramCourses = useMemo(() => {
-    const historicalCourses = historicalRecords.map((record) => ({
-      code: record.courseCode,
-      name: record.courseName,
-      subject: record.subject ?? '',
-    }));
     const counted: Course[] = [];
     allSelectedCourses.forEach((course) => {
       if (
-        (englishExemptionStatus === 'approved' && activePlan.studentTrack !== 'general_phd' && isEnglishCourse(course)) ||
-        historicalCourses.some((record) => coursesShareIdentity(course, record)) ||
+        (englishExemptionStatus === 'approved' && isEnglishCourse(course)) ||
         counted.some((item) => coursesShareIdentity(item, course))
       ) {
         return;
@@ -1924,7 +1906,7 @@ export default function CourseExplorer({
       counted.push(course);
     });
     return counted;
-  }, [allSelectedCourses, englishExemptionStatus, activePlan.studentTrack, historicalRecords]);
+  }, [allSelectedCourses, englishExemptionStatus]);
   const selectedTermSummaries = useMemo(
     () =>
       availableDatasets
@@ -2117,7 +2099,7 @@ export default function CourseExplorer({
   const programChecks = useMemo(
     () =>
       getProgramChecks({
-        selectedCourses: countedSelectedCourses,
+        selectedCourses,
         designations: activeDesignations,
         historicalRecords,
         plan: activePlan,
@@ -2130,7 +2112,7 @@ export default function CourseExplorer({
       activePlan,
       activeTermId,
       conflictPairs.length,
-      countedSelectedCourses,
+      selectedCourses,
       historicalRecords,
       programGaps,
     ],
@@ -2635,7 +2617,7 @@ export default function CourseExplorer({
           typeof record.courseCode === 'string' &&
           typeof record.credits === 'number' &&
           Number.isFinite(record.credits) && record.credits >= 0 &&
-          typeof record.category === 'string',
+          typeof record.category === 'string' && validHistoryExtensions(record),
       ) ||
       !['normal', 'planned', 'approved'].includes(
         value.englishExemptionStatus || '',
@@ -2746,7 +2728,7 @@ export default function CourseExplorer({
       );
       return;
     }
-    const matchedCourse = initialCourses.find(
+    const matchedCourse = availableDatasets.flatMap(dataset => dataset.courses).find(
       (course) => course.code.toUpperCase() === courseCode,
     );
     setHistoricalRecords((current) => [
@@ -2759,6 +2741,7 @@ export default function CourseExplorer({
         credits,
         category: historyDraft.category,
         subject: matchedCourse?.subject,
+        level: historyDraft.level || matchedCourse?.level,
         designation: historyDraft.designation,
         module: historyDraft.module,
         courseCount: historyDraft.courseName.trim() ? 1 : null,
@@ -2782,29 +2765,34 @@ export default function CourseExplorer({
       return;
     }
     const hours = attendanceCount * 2;
-    const credits = hours / 20;
+    if (!lectureAcademicYear(hiasDraft.term)) {
+      setDataManagementError('请选择明确学年/学期，讲座学时不能跨学年拼接。');
+      return;
+    }
+    const lectureName = hiasDraft.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座';
     setHistoricalRecords((current) => [
       ...current,
       {
         id: `history-hias-${Date.now()}`,
         term: hiasDraft.term.trim() || '学期待补充',
-        courseName: 'HIAS讲堂',
-        courseCode: 'HIAS-LECTURE',
-        credits,
-        category: '专业选修课',
-        subject: '人文系列讲座',
+        courseName: lectureName,
+        courseCode: hiasDraft.kind === 'hias' ? 'HIAS-LECTURE' : 'FRONTIER-LECTURE',
+        credits: 0,
+        category: hiasDraft.kind === 'hias' ? '公共选修课' : '科学前沿讲座',
+        subject: lectureName,
         designation: 'non-degree',
-        module: 'hias',
+        module: hiasDraft.kind === 'hias' ? 'hias' : 'regular',
+        lectureStatus: 'attendance',
         hours,
         attendanceCount,
         courseCount: 0,
-        source: '用户手动录入·按 2 学时/次、20 学时/学分换算',
+        source: '用户登记学时·每次2学时，同学年同类别每满20学时预计1分，学年结束认定',
       },
     ]);
-    setHiasDraft((current) => ({ term: current.term, attendanceCount: '' }));
+    setHiasDraft((current) => ({ ...current, attendanceCount: '' }));
     setDataManagementError('');
     setDataManagementMessage(
-      `已加入 ${attendanceCount} 次 HIAS 讲堂（${hours} 学时，${formatCredits(credits)} 学分），归入公共选修课。`,
+      `已登记 ${attendanceCount} 次${lectureName}（${hours} 学时）；仅累计学时，学年结束认定前不计入已修学分。`,
     );
   }
 
@@ -3707,9 +3695,9 @@ export default function CourseExplorer({
                       <div className="data-management-card-head">
                         <ClipboardList />
                         <div>
-                          <h3>历史学分与 HIAS 讲堂</h3>
+                          <h3>历史学分与讲座认定</h3>
                           <p>
-                            补录已修学分与讲堂次数，均计入培养要求进度；数据仅存本机。
+                            已修课程按培养要求累计；讲座先记学时，学年结束认定后再计已修学分。数据仅存本机。
                           </p>
                         </div>
                       </div>
@@ -3817,21 +3805,52 @@ export default function CourseExplorer({
                               </NativeSelectOption>
                             </NativeSelect>
                           </div>
+                          <NativeSelect aria-label="历史课程培养层次" value={historyDraft.level}
+                            onChange={(event) => setHistoryDraft(current => ({ ...current, level: event.target.value }))}>
+                            <NativeSelectOption value="">培养层次未知（或按匹配课程）</NativeSelectOption>
+                            <NativeSelectOption value="硕士课程">硕士专属课程</NativeSelectOption>
+                            <NativeSelectOption value="硕博通用课程">硕博通用课程</NativeSelectOption>
+                            <NativeSelectOption value="博士课程">博士课程</NativeSelectOption>
+                          </NativeSelect>
                           <Button
                             className="mt-2 h-9 w-full"
                             onClick={addHistoricalRecord}
                           >
                             <ClipboardList /> 添加历史记录
                           </Button>
+                          {historyToVerify.length > 0 && <div className="my-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6">
+                            <h5 className="font-semibold text-amber-800">旧数据核验清单 · {historyToVerify.length} 项</h5>
+                            <p className="text-xs text-slate-600">请依据原始材料补充，不要猜测。修改后统计自动更新，原记录不会被删除。</p>
+                            <ul className="mt-2 space-y-2">{historyToVerify.map(record => <li key={record.id}>
+                              <a className="font-medium text-blue-800 underline" href={`#history-record-${record.id}`}>{record.courseName || '未命名历史课程'}</a>
+                              <p className="text-xs text-amber-800">{isAttendanceRecord(record) ? (!lectureAcademicYear(record.term) ? '学年缺失：补充学年后才能正确汇总预计讲座学分。' : '旧讲座换算：请核对教务认定结果；原小数学分不直接作为已修。') : '专业课程层次待核验：在下方补充层次后重新判断博士培养学分。'}</p>
+                            </li>)}</ul>
+                          </div>}
                           {historicalRecords.length > 0 && (
                             <div className="history-record-list mt-2">
                               {historicalRecords.map((record) => (
-                                <div key={record.id}>
+                                <div key={record.id} id={`history-record-${record.id}`}>
                                   <span>
                                     {record.courseName || '分类学分'} ·{' '}
                                     {record.term}
                                   </span>
-                                  <b>{formatCredits(record.credits)} 学分</b>
+                                  <b>{isAttendanceRecord(record)
+                                    ? `${record.hours ?? (record.attendanceCount ?? 0) * 2} 学时 · ${record.lectureStatus === 'recognized' ? '已登记认定' : '待学年结束认定'}${record.lectureStatus === undefined ? '（保留旧换算值，未直接计分）' : ''}`
+                                    : `${formatCredits(record.credits)} 学分`}</b>
+                                  {isAttendanceRecord(record) && !lectureAcademicYear(record.term) && <Input aria-label={`${record.courseName}记录学年`} placeholder="如2026-2027" defaultValue={record.term}
+                                    onBlur={(event) => {
+                                      if (lectureAcademicYear(event.target.value)) setHistoricalRecords(current => current.map(item => item.id === record.id ? { ...item, term: event.target.value, lectureStatus: 'attendance' } : item));
+                                    }} />}
+                                  {doctoralProfessionalLevel(historicalCourseLike(record), activePlan) !== 'eligible' && (
+                                    <span className="text-xs text-amber-700">未计入博士培养：{record.level || '层次待核验'}</span>
+                                  )}
+                                  {!isAttendanceRecord(record) && <NativeSelect aria-label={`${record.courseName}历史培养层次`} value={record.level ?? ''}
+                                    onChange={(event) => setHistoricalRecords(current => current.map(item => item.id === record.id ? { ...item, level: event.target.value } : item))}>
+                                    <NativeSelectOption value="">层次未知/按编码</NativeSelectOption>
+                                    <NativeSelectOption value="硕士课程">硕士专属</NativeSelectOption>
+                                    <NativeSelectOption value="硕博通用课程">硕博通用</NativeSelectOption>
+                                    <NativeSelectOption value="博士课程">博士</NativeSelectOption>
+                                  </NativeSelect>}
                                   <button
                                     aria-label={`删除${record.courseName || record.category}历史记录`}
                                     onClick={() =>
@@ -3853,13 +3872,13 @@ export default function CourseExplorer({
                         <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
                           <div className="flex items-center justify-between gap-2">
                             <h4 className="text-sm font-semibold text-slate-700">
-                              HIAS 讲堂
+                              讲座学时与学年认定
                             </h4>
-                              <Badge variant="secondary">公共选修课</Badge>
+                              <Badge variant="secondary">分学年、分类别累计</Badge>
                           </div>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <NativeSelect
-                              aria-label="HIAS讲堂学期"
+                              aria-label="讲座学期"
                               onChange={(event) =>
                                 setHiasDraft((current) => ({
                                   ...current,
@@ -3881,7 +3900,7 @@ export default function CourseExplorer({
                               ))}
                             </NativeSelect>
                             <Input
-                              aria-label="HIAS讲堂参加次数"
+                              aria-label="讲座参加次数"
                               min="1"
                               onChange={(event) =>
                                 setHiasDraft((current) => ({
@@ -3894,23 +3913,32 @@ export default function CourseExplorer({
                               value={hiasDraft.attendanceCount}
                             />
                           </div>
+                          <NativeSelect aria-label="讲座类别" value={hiasDraft.kind}
+                            onChange={(event) => setHiasDraft(current => ({ ...current, kind: event.target.value as 'hias' | 'frontier' }))}>
+                            <NativeSelectOption value="hias">HIAS讲堂 · 公共选修</NativeSelectOption>
+                            <NativeSelectOption value="frontier">科学前沿讲座 · 专业非学位</NativeSelectOption>
+                          </NativeSelect>
                           <div className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-500">
-                            本次换算：
+                            本次学时：
                             {hiasPreview
-                              ? `${hiasPreview.hours} 学时 = ${formatCredits(hiasPreview.credits)} 学分`
-                              : '填写次数后自动换算'}
+                              ? `${hiasPreview.hours} 学时；本次满20学时部分预计 ${hiasPreview.credits} 分，最终按同学年累计认定`
+                              : '每次2学时，每满20学时预计1分，暂无上限；学年结束认定'}
                           </div>
                           <Button
                             className="mt-2 h-9 w-full"
                             onClick={addHiasRecord}
                           >
-                            <ClipboardList /> 添加讲堂记录
+                            <ClipboardList /> 添加讲座记录
                           </Button>
-                          <p className="mt-2 text-xs text-slate-500">
-                            已累计：{hiasHistorySummary.attendanceCount} 次 ·{' '}
-                            {hiasHistorySummary.hours} 学时 ·{' '}
-                            {formatCredits(hiasHistorySummary.credits)} 学分
-                          </p>
+                          <p className="mt-2 text-xs text-slate-500">两类讲座不混算，未满20学时不跨学年结转；均不计秋春最低10分。下方“登记认定”仅记录你已获得的教务结果，不是本工具审批。</p>
+                          {lectureProgress.map(group => <div key={group.key} className="mt-2 rounded-lg border bg-white p-3 text-xs leading-6">
+                            <b>{group.year ?? '学年待核验'} · {group.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座'}</b>
+                            <p>{group.hours} 学时 · 预计可认定 {group.estimatedCredits} 分 · 已登记认定 {group.recognizedCredits} 分</p>
+                            {group.legacy && <p className="text-amber-700">含旧版换算记录：原值保留，不再直接按小数学分累计，请核实学年和认定结果。</p>}
+                            <Button size="sm" variant="outline" disabled={!group.year || group.estimatedCredits === group.recognizedCredits}
+                              onClick={() => setLectureConfirmation({ key: group.key, revoke: false })}>登记学年结束后的认定结果</Button>
+                            {group.recognizedCredits > 0 && <Button size="sm" variant="ghost" onClick={() => setLectureConfirmation({ key: group.key, revoke: true })}>撤回认定登记</Button>}
+                          </div>)}
                         </div>
                       </div>
                     </article>
@@ -4009,7 +4037,7 @@ export default function CourseExplorer({
                       </p>
                       {englishExemptionStatus === 'approved' && (
                         <p className="px-6 pb-3 text-xs leading-5 text-slate-600">
-                          英语免修计入培养累计，不重复计算已选英语。本工具暂不将免修计入本学期实际修读的最低10学分，具体口径请向教务确认。
+                          获准硕士英语免修3学分计入培养累计及秋季最低10学分，春季不重复增加；与已选/历史英语去重，不替代博士学位英语。依据2026-09-17补充确认。
                         </p>
                       )}
                     </div>
@@ -4074,8 +4102,9 @@ export default function CourseExplorer({
 
                     <div className="guide-progress">
                       <h3>
-                        分类学分 <small>当前 / 要求</small>
+                        分类学分 <small>预计累计 / 要求</small>
                       </h3>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">历史已修 + 各学期预选/计划 + 不重复的免修资格 = 预计累计。展开明细可核对来源；春季计划不等于已正式开课或已修完成。</p>
                       <div className="requirement-grid mt-3">
                         {[
                           [
@@ -4127,6 +4156,7 @@ export default function CourseExplorer({
                           >
                             <span>{label}</span>
                             <strong>{value}</strong>
+                            <CreditDetails label={label} entries={programCreditSummary.entries} termFor={entry => entry.term || (entry.origin === 'exemption' ? '培养累计；仅贡献秋季最低学分' : availableDatasets.filter(dataset => dataset.courses.some(course => course.id === entry.course.id)).map(dataset => dataset.label).join('、') || '学期待核对')} />
                             {label === '专业学位课' &&
                               programCreditSummary.approvalRequiredDegreeCredits > 0 && (
                                 <small className="text-xs leading-5 text-amber-700">
@@ -4139,6 +4169,13 @@ export default function CourseExplorer({
                           </div>
                         ))}
                       </div>
+                      {allSelectedCourses.some(course => !isCourseApplicable(course, activePlan)) && <details className="mt-3 text-sm">
+                        <summary className="cursor-pointer text-amber-800">查看未计入培养累计的已选课程</summary>
+                        <ul className="mt-2 space-y-2">{allSelectedCourses.filter(course => !isCourseApplicable(course, activePlan)).map(course => <li key={course.id}>
+                          <b>{course.name}</b> · 未计入 {formatCredits(course.credits)} 学分
+                          <p className="text-xs text-slate-600">{doctoralProfessionalLevel(course, activePlan) === 'verification' ? '专业课程层次缺失或冲突，请核对材料。' : '课程培养层次或适用学生类别不符合当前培养方向；已选记录保留，不等于禁止修读。'}</p>
+                        </li>)}</ul>
+                      </details>}
                       {(activePlan.innovationCredits ?? 0) > 0 && (
                         <p className="mt-2 text-xs leading-5 text-slate-500">
                           公共选修体系合计要求{' '}
@@ -4487,7 +4524,7 @@ export default function CourseExplorer({
                           {` ${getGraduateProgramScopeLabel(activePlan)}`}
                           课程类别、培养要求分类和学位属性分开保存；《工程伦理》按公共必修非学位课统计，不计入学位课程。
                           创新创业课程编码依据“2026创新创业课秋季课表.xlsx”标记为“创新创业课”模块，仍按公共选修课归属，学分只累计一次。
-                          HIAS讲堂可按参加次数登记（每次2学时、20学时折算1学分，计入公共选修，不计入专业非学位或秋春学期最低10学分），登记入口见「数据管理」。
+                          两类讲座可在「数据管理」登记，每次2学时，同学年同类别每满20学时可认定1分，暂无上限；学年结束前只显示进度。HIAS归公共选修、科学前沿归专业非学位，均不计秋春最低10分。
                           {activePlan.program === '物理电子学' &&
                             ' 两份文件中“主被动光谱探测技术”的学分分别为2与2.5，本页采用秋季课表的2.5学分并保留此提示。'}
                         </span>
@@ -4977,6 +5014,25 @@ export default function CourseExplorer({
         </DialogContent>
       </Dialog>
       <FeedbackDialog key={JSON.stringify(feedbackContext)} context={feedbackContext} onClose={() => setFeedbackContext(null)} />
+      <AlertDialog open={lectureConfirmation !== null} onOpenChange={open => { if (!open) setLectureConfirmation(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{lectureConfirmation?.revoke ? '撤回认定登记' : '登记教务认定结果'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {lectureConfirmation?.revoke ? '撤回本工具中的认定登记，全部学时和原始记录仍保留，不会撤销学校的认定。' : `请确认${confirmingLecture?.year ?? ''}学年已结束，且${confirmingLecture?.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座'}已由教务认定共${confirmingLecture?.estimatedCredits ?? 0}学分。本工具仅登记结果，不提供审批。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={!confirmingLecture?.year} onClick={() => {
+              if (!confirmingLecture?.year) return;
+              const status = lectureConfirmation?.revoke ? 'attendance' : 'recognized';
+              setHistoricalRecords(current => current.map(record => confirmingLecture.ids.includes(record.id) ? { ...record, lectureStatus: status } : record));
+              setLectureConfirmation(null);
+            }}>确认{lectureConfirmation?.revoke ? '撤回' : '登记'}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={exportReminderOpen} onOpenChange={setExportReminderOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -5036,9 +5092,7 @@ export default function CourseExplorer({
           <DialogHeader>
           <DialogTitle>优化当前方案</DialogTitle>
             <DialogDescription>
-              {semesterCreditGap > 0 && programGaps.semesterExemptionCredits >= semesterCreditGap
-                ? '实际修读学分与10学分的差额可由英语免修覆盖，但是否允许计入须向教务确认；本工具不因此强制补课。'
-                : semesterCreditGap > 0
+              {semesterCreditGap > 0
                 ? `当前有效选课学分为 ${formatCredits(semesterEligibleCredits)}，秋季/春季最低要求为 10 学分，还差 ${formatCredits(semesterCreditGap)} 学分。`
                 : '本学期有效学分要求已满足或不设统一下限；培养缺口可在后续学期继续完成，无需为了补齐毕业要求过度选课。'}
             </DialogDescription>

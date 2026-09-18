@@ -1,0 +1,16 @@
+{
+  "programPoolAssertions": "4 masters passed (48 pool entries)",
+  "hiasOneAttendancePublicElective": 0.1,
+  "generalPhdPublicRequired": {
+    "current": 5,
+    "target": 11,
+    "gap": 6
+  },
+  "springMetadata": {
+    "count": 22,
+    "allPlanned": true,
+    "allNoSchedules": true,
+    "allCapacityUnknown": true,
+    "publicElective": 0
+  }
+}

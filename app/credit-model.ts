@@ -1,4 +1,5 @@
 import type { ProgramPlan } from './program-plans';
+import { recognizedLectureHistory } from './lecture-records';
 import {
   getAcademicAllowedSubjects,
   getGraduateProgramKind,
@@ -87,6 +88,8 @@ export type HistoricalRecord = {
   credits: number;
   category: string;
   subject?: string;
+  level?: string;
+  lectureStatus?: 'attendance' | 'recognized';
   designation: CourseDesignation | 'unknown';
   module: HistoricalModule;
   hours?: number;
@@ -226,10 +229,15 @@ export function isProfessionalDegreeType(
 export function getDegreeEligibility(
   course: Pick<
     CourseLike,
-    'code' | 'officialCode' | 'category' | 'name' | 'subject' | 'program'
+    'code' | 'officialCode' | 'category' | 'name' | 'subject' | 'program' | 'level'
   >,
   plan?: ProgramPlan,
 ): DegreeEligibility {
+  const levelStatus = doctoralProfessionalLevel(course, plan);
+  if (levelStatus !== 'eligible') return {
+    status: levelStatus, recognitionSource: 'verification',
+    reason: levelStatus === 'ineligible' ? '博士培养的专业类课程须为硕博通用或博士课程；此硕士专属课程不计入博士培养学分，原选课记录保留。' : '专业课培养层次缺失或与编码冲突，暂不计入博士培养学分，请核验。',
+  };
   const reconciliation = reconcileCourseSources(course);
   if (reconciliation.sourceStatus === 'conflict') {
     return {
@@ -268,6 +276,9 @@ export function getDegreeEligibility(
   }
 
   if (kind === 'academic') {
+    if ([...plan.coreCourses, ...plan.professionalCourses].some(name => normalizeCourseName(name) === normalizeCourseName(course.name))) {
+      return { status: 'eligible', recognitionSource: 'explicit_program', reason: '学院培养方案已明确列出该课程；不因二级学科映射表未收录而否定认定。' };
+    }
     const allowedSubjects = getAcademicAllowedSubjects(plan);
     // 课程可能同时归属多个学科（subject 以 、/；分隔），任一命中一级/二级学科范围即认可。
     const subjectTokens = (course.subject ?? '')
@@ -355,9 +366,15 @@ export function getCourseRoleEligibility(
     | 'subject'
     | 'module'
     | 'program'
+    | 'level'
   >,
   plan?: ProgramPlan,
 ): DegreeEligibility {
+  const levelStatus = doctoralProfessionalLevel(course, plan);
+  if (levelStatus !== 'eligible') return {
+    status: levelStatus, recognitionSource: 'verification',
+    reason: levelStatus === 'ineligible' ? '硕士专属专业课不计入博士培养学分；记录保留，不代表禁止修读。' : '专业课培养层次待核验，暂不计入博士培养学分。',
+  };
   const reconciliation = reconcileCourseSources(course);
   if (reconciliation.sourceStatus === 'conflict') {
     return {
@@ -383,9 +400,6 @@ export function getCourseRoleEligibility(
     };
   }
   if (isPublicRequiredCourse(course)) {
-    if (isMastersPublicOutsideGeneralPhd(course, plan)) {
-      return { status: 'verification', recognitionSource: 'verification', reason: '学校须知第12页将该课程列为硕士、硕博连读与直博公共必修；不能自动替代普通博士的公共必修要求，其他用途请核对正式材料。' };
-    }
     return {
       status: 'eligible',
       reason:
@@ -527,10 +541,19 @@ export function isEnglishCourse(course: Pick<CourseLike, 'code' | 'name'>) {
     normalizeCourseName(course.name) === '硕士学位英语';
 }
 
-/** Student-track applicability is not a ban on selecting the course for other purposes. */
-function isMastersPublicOutsideGeneralPhd(course: Pick<CourseLike, 'code' | 'name'>, plan?: ProgramPlan) {
-  return plan?.studentTrack === 'general_phd' && (isEnglishCourse(course) ||
-    ['新时代中国特色社会主义理论与实践', '自然辩证法概论'].includes(normalizeCourseName(course.name)));
+export function doctoralProfessionalLevel(course: Partial<CourseLike>, plan?: ProgramPlan): RecognitionStatus {
+  if (!plan || !(/博士/.test(plan.degree) || (plan.studentTrack ?? '').endsWith('_phd'))) return 'eligible';
+  const category = getCourseCodeCategory(course.officialCode || course.code || '');
+  // Public courses and lecture attendance are not restricted by professional-course level.
+  if (['public-required', 'public-elective', 'frontier-lecture'].includes(category) ||
+      /公共|科学前沿讲座|HIAS讲堂|人文系列讲座/.test(`${course.category} ${course.name}`)) return 'eligible';
+  const code = normalizeCourseCode(course.officialCode || course.code || '');
+  const marker = /^[1-4]\d{11}[MPD][1-7BX]\d{3}$/.test(code) ? code[12] : '';
+  const level = course.level ?? '';
+  const declared = /硕博通用|博士/.test(level) ? 'eligible' : /硕士/.test(level) ? 'ineligible' : undefined;
+  const encoded = marker === 'M' ? 'ineligible' : /P|D/.test(marker) && marker ? 'eligible' : undefined;
+  if (declared && encoded && declared !== encoded) return 'verification';
+  return declared ?? encoded ?? 'verification';
 }
 
 /** One learning course, regardless of teaching section or planned/official source. */
@@ -544,9 +567,11 @@ export function uniqueCourses<T extends Pick<CourseLike, 'code' | 'name'> & Part
 
 export function isCourseApplicable(course: Partial<CourseLike>, plan?: ProgramPlan) {
   if (!plan) return true;
+  if (doctoralProfessionalLevel(course, plan) !== 'eligible') return false;
+  const carriedPublic = /博士/.test(plan.degree) && ['硕士学位英语', '新时代中国特色社会主义理论与实践', '自然辩证法概论'].includes(normalizeCourseName(course.name ?? ''));
   if (course.applicablePrograms?.length && !course.applicablePrograms.includes(plan.program)) return false;
-  if (course.applicableStudentTracks?.length && plan.studentTrack && !course.applicableStudentTracks.includes(plan.studentTrack)) return false;
-  if (/硕士/.test(plan.degree) && ((course.level ?? '').startsWith('博士') ||
+  if (!carriedPublic && course.applicableStudentTracks?.length && plan.studentTrack && !course.applicableStudentTracks.includes(plan.studentTrack)) return false;
+  if (/硕士|专硕|学硕/.test(plan.degree) && ((course.level ?? '').startsWith('博士') ||
     ['中国马克思主义与当代', '博士学位英语'].includes(course.name ?? ''))) return false;
   return true;
 }
@@ -655,7 +680,6 @@ export function getCourseRequirementType(
     return 'publicElective';
   }
   if (isPublicRequiredCourse(course)) {
-    if (isMastersPublicOutsideGeneralPhd(course, plan)) return 'pending';
     return designation === 'non-degree'
       ? 'publicRequiredNonDegree'
       : 'publicRequiredDegree';
@@ -699,6 +723,8 @@ export function classifyCourseRequirement(
 }
 
 export type CreditSummary = {
+  /** Audit rows are produced from the same deduplicated inputs as the totals. */
+  entries: CreditEntry[];
   historicalCredits: number;
   plannedCredits: number;
   /** Planned courses plus approved exemption credits, excluding historical credits. */
@@ -740,6 +766,16 @@ export type CreditSummary = {
   historicalRecords: HistoricalRecord[];
 };
 
+export type CreditEntry = {
+  course: CourseLike;
+  origin: 'history' | 'planned' | 'exemption';
+  term?: string;
+  requirementType: CourseRequirementType;
+  innovation: boolean;
+  supplemental: boolean;
+  reason: string;
+};
+
 function sumCredits(records: Array<{ credits: number }>) {
   return records.reduce((sum, record) => sum + record.credits, 0);
 }
@@ -753,7 +789,7 @@ function dedupeHistoricalRecords(records: HistoricalRecord[]) {
   const seenCourses: ReturnType<typeof historicalCourseLike>[] = [];
   return records.filter((record) => {
     if (
-      !record.credits || !record.courseName.trim() ||
+      !record.credits || !record.courseName.trim() || /科学前沿讲座/.test(record.courseName + record.category) ||
       isHiasCourse({
         name: record.courseName,
         module: record.module === 'hias' ? 'hias' : undefined,
@@ -796,6 +832,7 @@ export function historicalCourseLike(record: HistoricalRecord) {
     name: record.courseName,
     category: record.category,
     subject: record.subject ?? '',
+    level: record.level,
     credits: record.credits,
     module: courseModule,
   };
@@ -815,7 +852,7 @@ export function calculateCreditSummary({
   plan?: ProgramPlan;
 }): CreditSummary {
   const completedHistory = dedupeHistoricalRecords(
-    historicalRecords.filter((record) => record.credits > 0 && isCourseApplicable(historicalCourseLike(record), plan)),
+    recognizedLectureHistory(historicalRecords).filter((record) => record.credits > 0 && isCourseApplicable(historicalCourseLike(record), plan)),
   );
   const inHistory = (course: CourseLike) => completedHistory.some((record) =>
     coursesShareIdentity(course, historicalCourseLike(record)));
@@ -823,7 +860,7 @@ export function calculateCreditSummary({
   const countedSelected = uniqueCourses(selectedCourses).filter(
     (course) =>
       isCourseApplicable(course, plan) &&
-      !(exemptionStatus === 'approved' && plan?.studentTrack !== 'general_phd' && isEnglishCourse(course)) &&
+      !(exemptionStatus === 'approved' && isEnglishCourse(course)) &&
       !inHistory(course),
   );
   const historicalCategoryCredits: Record<string, number> = {};
@@ -896,9 +933,9 @@ export function calculateCreditSummary({
   );
   const hasHistoricalEnglish = historicalEnglishCredits > 0;
   const approvedExemptionCredits =
-    exemptionStatus === 'approved' && !hasHistoricalEnglish && plan?.studentTrack !== 'general_phd' ? 3 : 0;
+    exemptionStatus === 'approved' && !hasHistoricalEnglish ? 3 : 0;
   const plannedExemptionCredits =
-    exemptionStatus === 'planned' && !hasHistoricalEnglish && plan?.studentTrack !== 'general_phd' ? 3 : 0;
+    exemptionStatus === 'planned' && !hasHistoricalEnglish ? 3 : 0;
 
   const historicalDegreeCredits = sumCredits(
     historicalClassifications
@@ -983,6 +1020,26 @@ export function calculateCreditSummary({
       .reduce((sum, course) => sum + course.credits, 0);
 
   return {
+    entries: [
+      ...historicalClassifications.map(({ record, course, classification }): CreditEntry => ({
+        course, origin: 'history', term: record.term,
+        requirementType: classification.requirementType,
+        innovation: isInnovationHistoryRecord(record),
+        supplemental: record.designation === 'degree' && getCourseRoleEligibility(course, plan).status === 'approval_required',
+        reason: getCourseRoleEligibility(course, plan).reason,
+      })),
+      ...plannedClassifications.map(({ course, classification }): CreditEntry => ({
+        course, origin: 'planned', requirementType: classification.requirementType,
+        innovation: isInnovationCourse(course),
+        supplemental: getCourseDesignation(course, designations, plan) === 'degree' && getCourseRoleEligibility(course, plan).status === 'approval_required',
+        reason: getCourseRoleEligibility(course, plan).reason,
+      })),
+      ...(approvedExemptionCredits ? [{
+        course: { id: 'exemption:english', code: '', name: '英语免修免考资格', category: '公共必修课', subject: '', credits: approvedExemptionCredits },
+        origin: 'exemption' as const, requirementType: 'publicRequiredDegree' as const,
+        innovation: false, supplemental: false, reason: '已获资格；与历史英语及预选英语去重，不重复计分。',
+      }] : []),
+    ],
     historicalCredits: sumCredits(completedHistory),
     plannedCredits: sumCredits(countedSelected),
     selectionCredits: sumCredits(countedSelected) + approvedExemptionCredits,
@@ -1056,7 +1113,7 @@ export function getPlanCourseCounts({
   historicalRecords: HistoricalRecord[];
 }) {
   const countable = uniqueCourses(courses).filter((course) => isCourseApplicable(course, plan) &&
-    !historicalRecords.some((record) => record.credits > 0 && coursesShareIdentity(course, historicalCourseLike(record))));
+    !historicalRecords.some((record) => record.credits > 0 && isCourseApplicable(historicalCourseLike(record), plan) && coursesShareIdentity(course, historicalCourseLike(record))));
   const selectedCoreCount = countable.filter(
     (course) =>
       getCourseDesignation(course, designations, plan) === 'degree' &&
@@ -1079,6 +1136,7 @@ export function getPlanCourseCounts({
           name: record.courseName,
           category: record.category,
           subject: record.subject ?? '',
+          level: record.level,
         },
         plan,
       ).status === 'eligible' &&
@@ -1096,6 +1154,7 @@ export function getPlanCourseCounts({
           name: record.courseName,
           category: record.category,
           subject: record.subject ?? '',
+          level: record.level,
         },
         plan,
       ).status === 'eligible' &&

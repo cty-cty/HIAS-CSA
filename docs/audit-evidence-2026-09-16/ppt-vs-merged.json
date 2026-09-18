@@ -1,0 +1,42 @@
+[
+  {
+    "slide": 8,
+    "name": "量子光学",
+    "sheet": "光电信息工程",
+    "row": 19,
+    "changes": {
+      "chiefProfessor": [
+        "",
+        "孙远"
+      ],
+      "teacher": [
+        "孙远",
+        "胡晨昱"
+      ],
+      "assistant": [
+        "胡晨昱",
+        ""
+      ]
+    }
+  },
+  {
+    "slide": 12,
+    "name": "磁性材料",
+    "sheet": "材料工程",
+    "row": 16,
+    "changes": {
+      "chiefProfessor": [
+        "",
+        "Saqib"
+      ],
+      "teacher": [
+        "Saqib",
+        "朱家旗"
+      ],
+      "assistant": [
+        "朱家旗",
+        ""
+      ]
+    }
+  }
+]

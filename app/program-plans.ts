@@ -291,18 +291,18 @@ export const PROGRAM_PLANS: ProgramPlan[] = [
       label: '至少1门本学科硕博通用或博士专属核心/专业课作为学位课',
     }],
     note:
-      '学院材料已明确：普通招考博士总学分不少于38、公共必修不少于11、专业学位课不少于16、公共选修不少于2。具体博士核心课和专业课门数、不同培养类型的课程结构仍需结合学院方案确认，不套用硕士2+2。',
+      '依据2026-09-17用户补充确认：三类博士总学分38、公共必修11、专业学位16，包含硕士阶段适用学分。仅专业类课程要求硕博通用或博士层次，硕士公共必修可累计。普博不套用硕士2+2；学院其他门数要求仍待确认。',
   },
   ...(['direct_phd', 'combined_phd'] as const).map((studentTrack): ProgramPlan => ({
     id: 'physical-' + studentTrack,
     label: '物理电子学 · ' + (studentTrack === 'direct_phd' ? '直博' : '硕博连读'),
     degree: '博士', program: '物理电子学', college: '物光学院', code: '0809 电子科学与技术',
-    studentTrack, totalCredits: null,
+    studentTrack, totalCredits: 38,
     publicRequiredCredits: 11, publicRequiredDegreeCredits: 11,
     publicRequiredNonDegreeCredits: 0, requiredPublicRequiredNonDegreeCourses: [],
     degreeCourseCredits: 16, professionalNonDegreeCredits: null,
     publicElectiveCredits: 2, innovationCredits: null, coreMinimum: 2, professionalMinimum: 2,
     coreCourses: PHYSICAL_ELECTRONICS_CORE, professionalCourses: PHYSICAL_ELECTRONICS_PROFESSIONAL,
-    note: '学校须知第10、22页及学院物理电子学课程汇总：专业学位至少16学分，核心2门、专业2门分别核对。总学分及学院补充要求待核验；博士英语认定须结合实际培养阶段。',
+    note: '学校须知及学院课程方案：核心2门、专业2门分别核对。2026-09-17用户确认总38、公共必修11、专业学位16，包含硕士阶段适用学分。仅专业类课程要求硕博通用或博士层次；硕士公共必修仍可累计，博士英语按培养阶段认定。',
   })),
 ];
