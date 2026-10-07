@@ -933,15 +933,19 @@ function ScheduleLines({ schedules }: { schedules: Schedule[] }) {
           : schedule.periodText;
         return (
           <div
-            className="flex flex-wrap items-center gap-x-2 gap-y-1"
+            className="schedule-line flex flex-wrap items-center gap-x-2 gap-y-1"
             key={`${schedule.periodText}-${index}`}
           >
-            <span className="font-semibold text-slate-900">{dayLabel}</span>
-            {periodSuffix && (
-              <span className="text-slate-600">{periodSuffix}</span>
-            )}
-            <span className="text-slate-500">{schedule.weeksText}</span>
-            <span className="inline-flex items-center gap-1 text-slate-500">
+            <span className="schedule-period inline-flex items-center gap-1.5">
+              <span className="font-semibold text-slate-900">{dayLabel}</span>
+              {periodSuffix && (
+                <span className="text-slate-600">{periodSuffix}</span>
+              )}
+            </span>
+            <span className="schedule-weeks text-slate-500">
+              {schedule.weeksText}
+            </span>
+            <span className="schedule-room inline-flex items-center gap-1 text-slate-500">
               <MapPin className="size-3.5" /> {schedule.room}
             </span>
           </div>
@@ -3062,8 +3066,8 @@ export default function CourseExplorer({
               tabIndex={0}
             >
               {view === 'courses' ? (
-                <section className="py-6">
-                  <div className="section-heading mb-4 flex flex-wrap items-end justify-between gap-3">
+                <section className="catalog-page py-6">
+                  <div className="catalog-heading section-heading mb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
                       <h2>
                         {onlySelected ? '已选课程' : '选择本学期课程'}{' '}
@@ -3154,87 +3158,89 @@ export default function CourseExplorer({
                       onOpenChange={setFiltersOpen}
                     >
                       <CollapsibleContent id="advanced-filters">
-                        <div className="advanced-filters">
-                          {' '}
-                          <NativeSelect
-                            aria-label="按开课院系筛选"
-                            className="w-full [&>select]:h-11"
-                            onChange={(event) => {
-                              setCollege(event.target.value);
-                              setSubject('全部学科/专业');
-                            }}
-                            value={college}
-                          >
-                            <NativeSelectOption value="全部院系">
-                              全部院系
-                            </NativeSelectOption>
-                            {colleges.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {item}
+                        <div className="filter-reveal-inner">
+                          <div className="advanced-filters">
+                            {' '}
+                            <NativeSelect
+                              aria-label="按开课院系筛选"
+                              className="w-full [&>select]:h-11"
+                              onChange={(event) => {
+                                setCollege(event.target.value);
+                                setSubject('全部学科/专业');
+                              }}
+                              value={college}
+                            >
+                              <NativeSelectOption value="全部院系">
+                                全部院系
                               </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
-                          <NativeSelect
-                            aria-label="按所属学科或专业筛选（需先选择学院）"
-                            className="w-full [&>select]:h-11"
-                            onChange={(event) => setSubject(event.target.value)}
-                            value={subject}
-                            disabled={college === '全部院系'}
-                          >
-                            <NativeSelectOption value="全部学科/专业">
-                              全部学科/专业
-                            </NativeSelectOption>
-                            {subjectGroups.map((group) => (
-                              <optgroup key={group.id} label={group.label}>
-                                {group.items.length > 0 ? (
-                                  group.items.map((item) => (
-                                    <NativeSelectOption key={item} value={item}>
-                                      {item}
+                              {colleges.map((item) => (
+                                <NativeSelectOption key={item} value={item}>
+                                  {item}
+                                </NativeSelectOption>
+                              ))}
+                            </NativeSelect>
+                            <NativeSelect
+                              aria-label="按所属学科或专业筛选（需先选择学院）"
+                              className="w-full [&>select]:h-11"
+                              onChange={(event) => setSubject(event.target.value)}
+                              value={subject}
+                              disabled={college === '全部院系'}
+                            >
+                              <NativeSelectOption value="全部学科/专业">
+                                全部学科/专业
+                              </NativeSelectOption>
+                              {subjectGroups.map((group) => (
+                                <optgroup key={group.id} label={group.label}>
+                                  {group.items.length > 0 ? (
+                                    group.items.map((item) => (
+                                      <NativeSelectOption key={item} value={item}>
+                                        {item}
+                                      </NativeSelectOption>
+                                    ))
+                                  ) : (
+                                    <NativeSelectOption
+                                      disabled
+                                      value={'empty-' + group.id}
+                                    >
+                                      暂无已载入专业
                                     </NativeSelectOption>
-                                  ))
-                                ) : (
-                                  <NativeSelectOption
-                                    disabled
-                                    value={'empty-' + group.id}
-                                  >
-                                    暂无已载入专业
-                                  </NativeSelectOption>
-                                )}
-                              </optgroup>
-                            ))}
-                          </NativeSelect>
-                          <NativeSelect
-                            aria-label="按课程类别筛选"
-                            className="w-full [&>select]:h-11"
-                            onChange={(event) =>
-                              setCategory(event.target.value)
-                            }
-                            value={category}
-                          >
-                            <NativeSelectOption value="全部类别">
-                              全部课程类别
-                            </NativeSelectOption>
-                            {categories.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {item}
+                                  )}
+                                </optgroup>
+                              ))}
+                            </NativeSelect>
+                            <NativeSelect
+                              aria-label="按课程类别筛选"
+                              className="w-full [&>select]:h-11"
+                              onChange={(event) =>
+                                setCategory(event.target.value)
+                              }
+                              value={category}
+                            >
+                              <NativeSelectOption value="全部类别">
+                                全部课程类别
                               </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
-                          <NativeSelect
-                            aria-label="按星期筛选"
-                            className="w-full [&>select]:h-11"
-                            onChange={(event) => setDay(event.target.value)}
-                            value={day}
-                          >
-                            <NativeSelectOption value="全部星期">
-                              全部星期
-                            </NativeSelectOption>
-                            {DAYS.map((item) => (
-                              <NativeSelectOption key={item} value={item}>
-                                {item}
+                              {categories.map((item) => (
+                                <NativeSelectOption key={item} value={item}>
+                                  {item}
+                                </NativeSelectOption>
+                              ))}
+                            </NativeSelect>
+                            <NativeSelect
+                              aria-label="按星期筛选"
+                              className="w-full [&>select]:h-11"
+                              onChange={(event) => setDay(event.target.value)}
+                              value={day}
+                            >
+                              <NativeSelectOption value="全部星期">
+                                全部星期
                               </NativeSelectOption>
-                            ))}
-                          </NativeSelect>
+                              {DAYS.map((item) => (
+                                <NativeSelectOption key={item} value={item}>
+                                  {item}
+                                </NativeSelectOption>
+                              ))}
+                            </NativeSelect>
+                          </div>
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -3345,6 +3351,13 @@ export default function CourseExplorer({
                           <article
                             className={`course-card ${selected ? 'course-card-selected' : ''} ${conflict ? 'course-card-conflict' : ''}`}
                             key={course.id}
+                            data-recent-selection={
+                              selected &&
+                              undoSelection?.termId === activeTermId &&
+                              !undoSelection.ids.includes(course.id)
+                                ? ''
+                                : undefined
+                            }
                           >
                             <div className="course-card-heading">
                               <h3>
@@ -3410,7 +3423,7 @@ export default function CourseExplorer({
                                   </Badge>
                                 )}
                             </div>
-                            <div className="my-3.5 h-px bg-slate-100" />
+                            <div className="course-divider my-3.5 h-px bg-slate-100" />
                             <div className="course-people grid grid-cols-2 gap-3 text-sm">
                               <div className="info-pair">
                                 <Users />
@@ -3450,6 +3463,9 @@ export default function CourseExplorer({
                               </div>
                             )}
                             <div className="course-time-block">
+                              <div className="course-schedule-label">
+                                <CalendarDays aria-hidden="true" />上课安排
+                              </div>
                               {course.schedules.length ? (
                                 <ScheduleLines schedules={course.schedules} />
                               ) : (
@@ -4682,6 +4698,12 @@ export default function CourseExplorer({
                       {selectedCourses.map((course) => (
                         <div
                           key={course.id}
+                          data-recent-selection={
+                            undoSelection?.termId === activeTermId &&
+                            !undoSelection.ids.includes(course.id)
+                              ? ''
+                              : undefined
+                          }
                           className={
                             conflictingIds.has(course.id) ? 'has-conflict' : ''
                           }
