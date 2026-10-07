@@ -12,7 +12,8 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "test:rules": "node --experimental-strip-types --experimental-loader ./scripts/ts-extension-loader.mjs scripts/validate-rules.mjs && node --experimental-strip-types --experimental-loader ./scripts/ts-extension-loader.mjs scripts/validate-regressions.mjs && node --experimental-strip-types --experimental-loader ./scripts/ts-extension-loader.mjs scripts/validate-confirmed-rules.mjs",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "test:catalog-navigation": "node --experimental-strip-types scripts/validate-catalog-navigation.mjs"
   },
   "dependencies": {
     "react": "19.2.6",

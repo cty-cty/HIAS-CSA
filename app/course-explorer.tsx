@@ -1,12 +1,18 @@
 'use client';
 
-import { isAttendanceRecord, lectureAcademicYear, lectureGroups, validHistoryExtensions } from './lecture-records';
+import {
+  isAttendanceRecord,
+  lectureAcademicYear,
+  lectureGroups,
+  validHistoryExtensions,
+} from './lecture-records';
 import { doctoralProfessionalLevel } from './credit-model';
 import { CreditDetails } from './credit-details';
 
 import {
   type ChangeEvent,
   useCallback,
+  useReducer,
   useEffect,
   useMemo,
   useRef,
@@ -92,7 +98,11 @@ import {
   PROGRAM_PLANS,
   type ProgramPlan,
 } from '@/app/program-plans';
-import { isPlannedCourse, mergeCourseRows, reconcileCourseUpdate } from '@/app/course-data';
+import {
+  isPlannedCourse,
+  mergeCourseRows,
+  reconcileCourseUpdate,
+} from '@/app/course-data';
 import { correctKnownRooms } from '@/app/course-corrections';
 import { FeedbackDialog, type FeedbackContext } from '@/app/feedback';
 import {
@@ -131,6 +141,12 @@ import {
   type RecommendationPlan,
 } from '@/app/recommendation-engine';
 import springCoursesData from './courses-spring.json';
+import {
+  createCatalogNavigation,
+  catalogNavigationReducer,
+  matchesPlanScope,
+  type CatalogBrowse,
+} from './catalog-navigation';
 
 type Schedule = {
   day: string;
@@ -234,7 +250,9 @@ function normalizeCourseForApp(course: Course): Course {
   return {
     ...course,
     scheduleStatus: isPlannedCourse(course) ? 'planned' : 'confirmed',
-    dataStatus: isPlannedCourse(course) ? 'planned_course' : 'official_schedule',
+    dataStatus: isPlannedCourse(course)
+      ? 'planned_course'
+      : 'official_schedule',
     schedules: isPlannedCourse(course) ? [] : course.schedules,
     officialCode:
       course.officialCode ??
@@ -636,8 +654,11 @@ function isCourse(value: unknown): value is Course {
     typeof course.teachingMode === 'string' &&
     typeof course.examMode === 'string' &&
     typeof course.teacher === 'string' &&
-    (course.officialCode === undefined || course.officialCode === null || typeof course.officialCode === 'string') &&
-    (course.canonicalCourseId === undefined || typeof course.canonicalCourseId === 'string') &&
+    (course.officialCode === undefined ||
+      course.officialCode === null ||
+      typeof course.officialCode === 'string') &&
+    (course.canonicalCourseId === undefined ||
+      typeof course.canonicalCourseId === 'string') &&
     (course.scheduleStatus === undefined ||
       course.scheduleStatus === 'confirmed' ||
       course.scheduleStatus === 'planned') &&
@@ -649,7 +670,9 @@ function isCourse(value: unknown): value is Course {
         course.applicablePrograms.every((item) => typeof item === 'string'))) &&
     (course.applicableStudentTracks === undefined ||
       (Array.isArray(course.applicableStudentTracks) &&
-        course.applicableStudentTracks.every((item) => typeof item === 'string'))) &&
+        course.applicableStudentTracks.every(
+          (item) => typeof item === 'string',
+        ))) &&
     Array.isArray(course.schedules) &&
     course.schedules.every((schedule) => {
       if (!schedule || typeof schedule !== 'object') return false;
@@ -691,9 +714,7 @@ function validateCourseRows(rawCourses: unknown[]) {
       errors.push(`第 ${row} 门课程的字段不完整或格式不正确`);
       return;
     }
-    if (
-      [value.id, value.name, value.category].some((field) => !field.trim())
-    ) {
+    if ([value.id, value.name, value.category].some((field) => !field.trim())) {
       errors.push(`第 ${row} 门课程包含空的关键字段`);
     }
     if (
@@ -759,9 +780,14 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
   ];
   return (
     textFields.every((value) => typeof value === 'string' && value.trim()) &&
-    [plan.degreeCourseCredits, plan.coreMinimum, plan.professionalMinimum].every(isNonNegativeNumber) &&
+    [
+      plan.degreeCourseCredits,
+      plan.coreMinimum,
+      plan.professionalMinimum,
+    ].every(isNonNegativeNumber) &&
     (plan.totalCredits === null || isNonNegativeNumber(plan.totalCredits)) &&
-    (plan.publicElectiveCredits === null || isNonNegativeNumber(plan.publicElectiveCredits)) &&
+    (plan.publicElectiveCredits === null ||
+      isNonNegativeNumber(plan.publicElectiveCredits)) &&
     creditFields.every(
       (value) =>
         value === undefined || value === null || isNonNegativeNumber(value),
@@ -811,9 +837,15 @@ function isProgramPlan(value: unknown): value is ProgramPlan {
             rule &&
             typeof rule.id === 'string' &&
             typeof rule.label === 'string' &&
-            (rule.degreeOnly === undefined || typeof rule.degreeOnly === 'boolean') &&
-            (rule.courseType === undefined || ['core', 'professional'].includes(rule.courseType)) &&
-            (rule.allowedLevels === undefined || (Array.isArray(rule.allowedLevels) && rule.allowedLevels.every((level) => typeof level === 'string' && level.trim()))) &&
+            (rule.degreeOnly === undefined ||
+              typeof rule.degreeOnly === 'boolean') &&
+            (rule.courseType === undefined ||
+              ['core', 'professional'].includes(rule.courseType)) &&
+            (rule.allowedLevels === undefined ||
+              (Array.isArray(rule.allowedLevels) &&
+                rule.allowedLevels.every(
+                  (level) => typeof level === 'string' && level.trim(),
+                ))) &&
             Array.isArray(rule.courseNames) &&
             rule.courseNames.every(
               (course) => typeof course === 'string' && course.trim(),
@@ -968,36 +1000,95 @@ export default function CourseExplorer({
   const [designationsByTerm, setDesignationsByTerm] = useState<
     Record<string, Record<string, CourseDesignation>>
   >({});
-  const [query, setQuery] = useState('');
-  const [college, setCollege] = useState('全部院系');
-  const [subject, setSubject] = useState('全部学科/专业');
-  const [category, setCategory] = useState('全部类别');
-  const [day, setDay] = useState('全部星期');
+  const [catalogNavigation, dispatchCatalog] = useReducer(
+    catalogNavigationReducer,
+    DEFAULT_TERM_ID,
+    createCatalogNavigation,
+  );
+  const {
+    query,
+    college,
+    subject,
+    category,
+    day,
+    onlySelected,
+    onlyNoConflict,
+    scope: planScope,
+    visibleCount,
+  } = catalogNavigation.current;
+  const patchCatalog = (patch: Partial<CatalogBrowse>) =>
+    dispatchCatalog({ type: 'patch', patch });
+  const setQuery = (query: string) => patchCatalog({ query });
+  const setCollege = (college: string) => patchCatalog({ college });
+  const setSubject = (subject: string) => patchCatalog({ subject });
+  const setCategory = (category: string) => patchCatalog({ category });
+  const setDay = (day: string) => patchCatalog({ day });
+  const setOnlyNoConflict = (onlyNoConflict: boolean) =>
+    patchCatalog({ onlyNoConflict });
+  const [catalogLayout, setCatalogLayout] = useState<'list' | 'cards'>('list');
+  const [workspaceMode, setWorkspaceMode] = useState<'catalog' | 'timetable'>(
+    'catalog',
+  );
+  const [mobilePlanOpen, setMobilePlanOpen] = useState(false);
+  const [verticalNavigation, setVerticalNavigation] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1025px)');
+    const sync = () => setVerticalNavigation(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
   const [storageReady, setStorageReady] = useState(false);
   const [storageStatus, setStorageStatus] = useState<
     'loading' | 'saved' | 'synced' | 'error'
   >('loading');
   const [dataMessage, setDataMessage] = useState('');
   const [dataError, setDataError] = useState('');
-  const [onlySelected, setOnlySelected] = useState(false);
-  const [onlyNoConflict, setOnlyNoConflict] = useState(false);
   const [view, setViewState] = useState<
     'courses' | 'guide' | 'notice' | 'exams' | 'data'
   >('courses');
+  useEffect(() => {
+    if (view !== 'courses' || workspaceMode !== 'catalog') return;
+    const frame = window.requestAnimationFrame(() =>
+      window.scrollTo({ top: catalogNavigation.restoreY, behavior: 'instant' }),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    catalogNavigation.revision,
+    catalogNavigation.restoreY,
+    view,
+    workspaceMode,
+  ]);
+  useEffect(() => {
+    if (activeTermId !== catalogNavigation.termId)
+      dispatchCatalog({
+        type: 'term',
+        termId: activeTermId,
+        scrollY:
+          view === 'courses' && workspaceMode === 'catalog' && !onlySelected
+            ? window.scrollY
+            : catalogNavigation.current.scrollY,
+      });
+  }, [
+    activeTermId,
+    catalogNavigation.termId,
+    catalogNavigation.current.scrollY,
+    view,
+    workspaceMode,
+    onlySelected,
+  ]);
   const [timetableOpen, setTimetableOpen] = useState(false);
   const [customProgramPlans, setCustomProgramPlans] = useState<ProgramPlan[]>(
     [],
   );
   const [programPlanId, setProgramPlanId] = useState('optical-master');
   const [programPlanPickerOpen, setProgramPlanPickerOpen] = useState(false);
-  const [programPlanPickerCollege, setProgramPlanPickerCollege] = useState<string | null>(null);
+  const [programPlanPickerCollege, setProgramPlanPickerCollege] = useState<
+    string | null
+  >(null);
   const [programPlanMessage, setProgramPlanMessage] = useState('');
   const [programPlanError, setProgramPlanError] = useState('');
   const [week, setWeek] = useState(2);
-  const [pagination, setPagination] = useState({ key: '', count: PAGE_SIZE });
-  const paginationKey = JSON.stringify([query, college, subject, category, day, onlySelected, onlyNoConflict, activeTermId]);
-  const visibleCount = pagination.key === paginationKey ? pagination.count : PAGE_SIZE;
-  const [compactCatalog, setCompactCatalog] = useState(true);
   const [detailCourse, setDetailCourse] = useState<Course | null>(null);
   const [historicalRecords, setHistoricalRecords] = useState<
     HistoricalRecord[]
@@ -1021,7 +1112,8 @@ export default function CourseExplorer({
     }
   }, [view]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [feedbackContext, setFeedbackContext] = useState<FeedbackContext | null>(null);
+  const [feedbackContext, setFeedbackContext] =
+    useState<FeedbackContext | null>(null);
   const [exportReminderOpen, setExportReminderOpen] = useState(false);
   const [isInitialSetup, setIsInitialSetup] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
@@ -1034,11 +1126,16 @@ export default function CourseExplorer({
   } | null>(null);
   const [recommendationDialogOpen, setRecommendationDialogOpen] =
     useState(false);
-  const [allowCrossMajorRecommendations, setAllowCrossMajorRecommendations] = useState(false);
-  const [pendingRecommendation, setPendingRecommendation] = useState<RecommendationPlan | null>(null);
+  const [allowCrossMajorRecommendations, setAllowCrossMajorRecommendations] =
+    useState(false);
+  const [pendingRecommendation, setPendingRecommendation] =
+    useState<RecommendationPlan | null>(null);
   const [dataManagementMessage, setDataManagementMessage] = useState('');
   const [dataManagementError, setDataManagementError] = useState('');
-  const [lectureConfirmation, setLectureConfirmation] = useState<{ key: string; revoke: boolean } | null>(null);
+  const [lectureConfirmation, setLectureConfirmation] = useState<{
+    key: string;
+    revoke: boolean;
+  } | null>(null);
   const [restorePreview, setRestorePreview] = useState<{
     payload: BackupPayload;
     summary: string[];
@@ -1080,7 +1177,10 @@ export default function CourseExplorer({
     createTermTemplateDataset(activeTermId, defaultCourses) ??
     createTermTemplateDataset(DEFAULT_TERM_ID, defaultCourses)!;
   const isDefaultTerm = activeDataset.id === DEFAULT_TERM_ID;
-  const roomCorrection = correctKnownRooms(activeDataset.id, activeDataset.courses);
+  const roomCorrection = correctKnownRooms(
+    activeDataset.id,
+    activeDataset.courses,
+  );
   const activeTermDisplayLabel =
     activeDataset.shortLabel || activeDataset.label;
   const audienceLabel =
@@ -1088,11 +1188,13 @@ export default function CourseExplorer({
     (isDefaultTerm ? '2026 级研一新生专用' : '适用对象以课程数据说明为准');
   const heroDescription = isDefaultTerm
     ? '课程数据依据已整理的 2026 年秋季课表与培养方案材料，仅供参考，用于帮助大家模拟选课、查看冲突与规划学分；最终课程安排请以学校正式通知和选课系统为准。'
-    : activeDataset.id === '2027-spring' && activeDataset.courses.length && activeDataset.courses.every(isPlannedCourse)
+    : activeDataset.id === '2027-spring' &&
+        activeDataset.courses.length &&
+        activeDataset.courses.every(isPlannedCourse)
       ? '当前显示依据 2026—2027 培养方案整理的春季计划课程，不是 2027 春季正式课表；具体课程编码、班次、时间、教室、名额和最终开设情况以春季教务系统为准。'
-    : activeDataset.courses.length
-      ? `当前使用“${activeDataset.label}”课程数据，仅供参考，用于模拟选课、查看冲突与规划学分；适用年级、培养要求和最终课程安排请以对应学校通知及选课系统为准。`
-      : `当前为“${activeDataset.label}”学期模板，尚未载入课程数据；可在“数据管理”中导入本学期课表。培养要求、选课规则和最终课程安排请以对应学校通知及选课系统为准。`;
+      : activeDataset.courses.length
+        ? `当前使用“${activeDataset.label}”课程数据，仅供参考，用于模拟选课、查看冲突与规划学分；适用年级、培养要求和最终课程安排请以对应学校通知及选课系统为准。`
+        : `当前为“${activeDataset.label}”学期模板，尚未载入课程数据；可在“数据管理”中导入本学期课表。培养要求、选课规则和最终课程安排请以对应学校通知及选课系统为准。`;
   const initialCourses = useMemo(
     () => activeDataset.courses.map(normalizeCourseForApp),
     [activeDataset.courses],
@@ -1106,9 +1208,15 @@ export default function CourseExplorer({
     customDatasets.forEach((dataset) => datasetMap.set(dataset.id, dataset));
     return [...datasetMap.values()];
   }, [customDatasets, defaultCourses]);
-  const futureSpringCourses = useMemo(() => activeTermId === DEFAULT_TERM_ID
-    ? availableDatasets.find((dataset) => dataset.id === '2027-spring')?.courses.map(normalizeCourseForApp)
-    : undefined, [activeTermId, availableDatasets]);
+  const futureSpringCourses = useMemo(
+    () =>
+      activeTermId === DEFAULT_TERM_ID
+        ? availableDatasets
+            .find((dataset) => dataset.id === '2027-spring')
+            ?.courses.map(normalizeCourseForApp)
+        : undefined,
+    [activeTermId, availableDatasets],
+  );
   const selectedIds = selectedByTerm[activeTermId] ?? EMPTY_SELECTED_IDS;
   const activeDesignations =
     designationsByTerm[activeTermId] ?? EMPTY_DESIGNATIONS;
@@ -1129,16 +1237,30 @@ export default function CourseExplorer({
     const merged: Record<string, CourseDesignation> = {};
     const seen: Course[] = [];
     availableDatasets.forEach((dataset) => {
-      dataset.courses.filter((course) => selectedByTerm[dataset.id]?.includes(course.id)).forEach((course) => {
-        if (seen.some((other) => coursesShareIdentity(course, other))) return;
-        seen.push(course);
-        const value = getStoredCourseDesignation(course, designationsByTerm[dataset.id] ?? {});
-        const representative = allSelectedCourses.find((other) => coursesShareIdentity(course, other)) ?? course;
-        if (value !== undefined) merged[designationLookupKey(representative)] = value;
-      });
+      dataset.courses
+        .filter((course) => selectedByTerm[dataset.id]?.includes(course.id))
+        .forEach((course) => {
+          if (seen.some((other) => coursesShareIdentity(course, other))) return;
+          seen.push(course);
+          const value = getStoredCourseDesignation(
+            course,
+            designationsByTerm[dataset.id] ?? {},
+          );
+          const representative =
+            allSelectedCourses.find((other) =>
+              coursesShareIdentity(course, other),
+            ) ?? course;
+          if (value !== undefined)
+            merged[designationLookupKey(representative)] = value;
+        });
     });
     return merged;
-  }, [availableDatasets, selectedByTerm, designationsByTerm, allSelectedCourses]);
+  }, [
+    availableDatasets,
+    selectedByTerm,
+    designationsByTerm,
+    allSelectedCourses,
+  ]);
   const selectedIdsRef = useRef(selectedIds);
   const availableProgramPlans = useMemo(() => {
     const planMap = new Map<string, ProgramPlan>();
@@ -1168,7 +1290,8 @@ export default function CourseExplorer({
   }, [availableProgramPlans]);
   const activePlan =
     availableProgramPlans.find((plan) => plan.id === programPlanId) ??
-    availableProgramPlans[0] ?? PROGRAM_PLANS[0];
+    availableProgramPlans[0] ??
+    PROGRAM_PLANS[0];
   const activeProgramCollege = getProgramPlanCollege(activePlan);
   const expandedProgramGroup = programPlanGroups.find(
     (group) => group.label === programPlanPickerCollege,
@@ -1182,211 +1305,213 @@ export default function CourseExplorer({
     // Restore one complete snapshot in a cancellable startup task. Persistence
     // stays gated by storageReady until every restored field has been applied.
     const restoration = window.setTimeout(() => {
-    const storedDatasets = window.localStorage.getItem(
-      COURSE_DATASETS_STORAGE_KEY,
-    );
-    const storedActiveTerm = window.localStorage.getItem(
-      ACTIVE_TERM_STORAGE_KEY,
-    );
-    const storedSelections = window.localStorage.getItem(
-      SELECTED_BY_TERM_STORAGE_KEY,
-    );
-    const storedDesignations = window.localStorage.getItem(
-      DESIGNATIONS_BY_TERM_STORAGE_KEY,
-    );
-    const legacySelected = window.localStorage.getItem(
-      LEGACY_SELECTED_STORAGE_KEY,
-    );
-    const storedProgramPlans = window.localStorage.getItem(
-      PROGRAM_PLANS_STORAGE_KEY,
-    );
-    const storedHistoricalRecords = window.localStorage.getItem(
-      HISTORICAL_RECORDS_STORAGE_KEY,
-    );
-    const storedEnglishExemption = window.localStorage.getItem(
-      ENGLISH_EXEMPTION_STORAGE_KEY,
-    );
+      const storedDatasets = window.localStorage.getItem(
+        COURSE_DATASETS_STORAGE_KEY,
+      );
+      const storedActiveTerm = window.localStorage.getItem(
+        ACTIVE_TERM_STORAGE_KEY,
+      );
+      const storedSelections = window.localStorage.getItem(
+        SELECTED_BY_TERM_STORAGE_KEY,
+      );
+      const storedDesignations = window.localStorage.getItem(
+        DESIGNATIONS_BY_TERM_STORAGE_KEY,
+      );
+      const legacySelected = window.localStorage.getItem(
+        LEGACY_SELECTED_STORAGE_KEY,
+      );
+      const storedProgramPlans = window.localStorage.getItem(
+        PROGRAM_PLANS_STORAGE_KEY,
+      );
+      const storedHistoricalRecords = window.localStorage.getItem(
+        HISTORICAL_RECORDS_STORAGE_KEY,
+      );
+      const storedEnglishExemption = window.localStorage.getItem(
+        ENGLISH_EXEMPTION_STORAGE_KEY,
+      );
 
-    let parsedDatasets: CourseDataset[] = [];
-    if (storedDatasets) {
-      try {
-        const parsed = JSON.parse(storedDatasets);
-        if (
-          Array.isArray(parsed) &&
-          parsed.every(
-            (dataset) =>
-              dataset &&
-              typeof dataset.id === 'string' &&
-              typeof dataset.label === 'string' &&
-              Array.isArray(dataset.courses) &&
-              dataset.courses.every(isCourse) &&
-              (dataset.audience === undefined ||
-                typeof dataset.audience === 'string'),
-          )
-        ) {
-          parsedDatasets = parsed;
+      let parsedDatasets: CourseDataset[] = [];
+      if (storedDatasets) {
+        try {
+          const parsed = JSON.parse(storedDatasets);
+          if (
+            Array.isArray(parsed) &&
+            parsed.every(
+              (dataset) =>
+                dataset &&
+                typeof dataset.id === 'string' &&
+                typeof dataset.label === 'string' &&
+                Array.isArray(dataset.courses) &&
+                dataset.courses.every(isCourse) &&
+                (dataset.audience === undefined ||
+                  typeof dataset.audience === 'string'),
+            )
+          ) {
+            parsedDatasets = parsed;
+          }
+        } catch {
+          window.localStorage.removeItem(COURSE_DATASETS_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(COURSE_DATASETS_STORAGE_KEY);
       }
-    }
 
-    let parsedSelections: Record<string, string[]> = {};
-    if (storedSelections) {
-      try {
-        const parsed = JSON.parse(storedSelections);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          parsedSelections = Object.fromEntries(
-            Object.entries(parsed).filter(
-              ([, ids]) =>
-                Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
-            ),
-          ) as Record<string, string[]>;
+      let parsedSelections: Record<string, string[]> = {};
+      if (storedSelections) {
+        try {
+          const parsed = JSON.parse(storedSelections);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsedSelections = Object.fromEntries(
+              Object.entries(parsed).filter(
+                ([, ids]) =>
+                  Array.isArray(ids) &&
+                  ids.every((id) => typeof id === 'string'),
+              ),
+            ) as Record<string, string[]>;
+          }
+        } catch {
+          window.localStorage.removeItem(SELECTED_BY_TERM_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(SELECTED_BY_TERM_STORAGE_KEY);
       }
-    }
 
-    let parsedDesignations: Record<
-      string,
-      Record<string, CourseDesignation>
-    > = {};
-    if (storedDesignations) {
-      try {
-        const parsed = JSON.parse(storedDesignations);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          parsedDesignations = Object.fromEntries(
-            Object.entries(parsed)
-              .filter(
-                ([, values]) =>
-                  values &&
-                  typeof values === 'object' &&
-                  !Array.isArray(values),
-              )
-              .map(([termId, values]) => [
-                termId,
-                Object.fromEntries(
-                  Object.entries(values as Record<string, unknown>).filter(
-                    ([, value]) =>
-                      value === 'degree' ||
-                      value === 'non-degree' ||
-                      value === 'unset',
+      let parsedDesignations: Record<
+        string,
+        Record<string, CourseDesignation>
+      > = {};
+      if (storedDesignations) {
+        try {
+          const parsed = JSON.parse(storedDesignations);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            parsedDesignations = Object.fromEntries(
+              Object.entries(parsed)
+                .filter(
+                  ([, values]) =>
+                    values &&
+                    typeof values === 'object' &&
+                    !Array.isArray(values),
+                )
+                .map(([termId, values]) => [
+                  termId,
+                  Object.fromEntries(
+                    Object.entries(values as Record<string, unknown>).filter(
+                      ([, value]) =>
+                        value === 'degree' ||
+                        value === 'non-degree' ||
+                        value === 'unset',
+                    ),
                   ),
-                ),
-              ]),
-          ) as Record<string, Record<string, CourseDesignation>>;
+                ]),
+            ) as Record<string, Record<string, CourseDesignation>>;
+          }
+        } catch {
+          window.localStorage.removeItem(DESIGNATIONS_BY_TERM_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(DESIGNATIONS_BY_TERM_STORAGE_KEY);
       }
-    }
 
-    let parsedProgramPlans: ProgramPlan[] = [];
-    if (storedProgramPlans) {
-      try {
-        const parsed = JSON.parse(storedProgramPlans);
-        if (
-          Array.isArray(parsed) &&
-          parsed.every(isProgramPlan) &&
-          new Set(parsed.map((plan) => plan.id)).size === parsed.length
-        ) {
-          parsedProgramPlans = parsed;
+      let parsedProgramPlans: ProgramPlan[] = [];
+      if (storedProgramPlans) {
+        try {
+          const parsed = JSON.parse(storedProgramPlans);
+          if (
+            Array.isArray(parsed) &&
+            parsed.every(isProgramPlan) &&
+            new Set(parsed.map((plan) => plan.id)).size === parsed.length
+          ) {
+            parsedProgramPlans = parsed;
+          }
+        } catch {
+          window.localStorage.removeItem(PROGRAM_PLANS_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(PROGRAM_PLANS_STORAGE_KEY);
       }
-    }
 
-    let parsedHistoricalRecords: HistoricalRecord[] = [];
-    if (storedHistoricalRecords) {
-      try {
-        const parsed = JSON.parse(storedHistoricalRecords);
-        if (
-          Array.isArray(parsed) &&
-          parsed.every(
-            (record) =>
-              record &&
-              typeof record.id === 'string' &&
-              typeof record.term === 'string' &&
-              typeof record.courseName === 'string' &&
-              typeof record.courseCode === 'string' &&
-              typeof record.credits === 'number' &&
-              Number.isFinite(record.credits) &&
-              record.credits >= 0 &&
-              typeof record.category === 'string' && validHistoryExtensions(record) &&
-              ['degree', 'non-degree', 'unknown'].includes(
-                record.designation,
-              ) &&
-              ['regular', 'innovation', 'hias', 'unknown'].includes(
-                record.module,
-              ) &&
-              (record.hours === undefined ||
-                (typeof record.hours === 'number' &&
-                  Number.isFinite(record.hours) &&
-                  record.hours >= 0)) &&
-              (record.attendanceCount === undefined ||
-                (typeof record.attendanceCount === 'number' &&
-                  Number.isFinite(record.attendanceCount) &&
-                  record.attendanceCount >= 0)) &&
-              (record.courseCount === null ||
-                typeof record.courseCount === 'number'),
-          )
-        ) {
-          parsedHistoricalRecords = parsed;
+      let parsedHistoricalRecords: HistoricalRecord[] = [];
+      if (storedHistoricalRecords) {
+        try {
+          const parsed = JSON.parse(storedHistoricalRecords);
+          if (
+            Array.isArray(parsed) &&
+            parsed.every(
+              (record) =>
+                record &&
+                typeof record.id === 'string' &&
+                typeof record.term === 'string' &&
+                typeof record.courseName === 'string' &&
+                typeof record.courseCode === 'string' &&
+                typeof record.credits === 'number' &&
+                Number.isFinite(record.credits) &&
+                record.credits >= 0 &&
+                typeof record.category === 'string' &&
+                validHistoryExtensions(record) &&
+                ['degree', 'non-degree', 'unknown'].includes(
+                  record.designation,
+                ) &&
+                ['regular', 'innovation', 'hias', 'unknown'].includes(
+                  record.module,
+                ) &&
+                (record.hours === undefined ||
+                  (typeof record.hours === 'number' &&
+                    Number.isFinite(record.hours) &&
+                    record.hours >= 0)) &&
+                (record.attendanceCount === undefined ||
+                  (typeof record.attendanceCount === 'number' &&
+                    Number.isFinite(record.attendanceCount) &&
+                    record.attendanceCount >= 0)) &&
+                (record.courseCount === null ||
+                  typeof record.courseCount === 'number'),
+            )
+          ) {
+            parsedHistoricalRecords = parsed;
+          }
+        } catch {
+          window.localStorage.removeItem(HISTORICAL_RECORDS_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(HISTORICAL_RECORDS_STORAGE_KEY);
       }
-    }
-    const parsedExemption: ExemptionStatus =
-      storedEnglishExemption === 'planned' ||
-      storedEnglishExemption === 'approved'
-        ? storedEnglishExemption
-        : 'normal';
-    if (!Object.keys(parsedSelections).length && legacySelected) {
-      try {
-        const legacyIds = JSON.parse(legacySelected);
-        if (
-          Array.isArray(legacyIds) &&
-          legacyIds.every((id) => typeof id === 'string')
-        ) {
-          parsedSelections[DEFAULT_TERM_ID] = legacyIds;
+      const parsedExemption: ExemptionStatus =
+        storedEnglishExemption === 'planned' ||
+        storedEnglishExemption === 'approved'
+          ? storedEnglishExemption
+          : 'normal';
+      if (!Object.keys(parsedSelections).length && legacySelected) {
+        try {
+          const legacyIds = JSON.parse(legacySelected);
+          if (
+            Array.isArray(legacyIds) &&
+            legacyIds.every((id) => typeof id === 'string')
+          ) {
+            parsedSelections[DEFAULT_TERM_ID] = legacyIds;
+          }
+        } catch {
+          window.localStorage.removeItem(LEGACY_SELECTED_STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(LEGACY_SELECTED_STORAGE_KEY);
       }
-    }
 
-    const nextActiveTerm =
-      storedActiveTerm &&
-      (TERM_TEMPLATE_IDS.has(storedActiveTerm) ||
-        parsedDatasets.some((dataset) => dataset.id === storedActiveTerm))
-        ? storedActiveTerm
-        : DEFAULT_TERM_ID;
-    const storedProgram = window.localStorage.getItem(
-      ACTIVE_PROGRAM_STORAGE_KEY,
-    );
-    if (
-      [...PROGRAM_PLANS, ...parsedProgramPlans].some(
-        (plan) => plan.id === storedProgram,
-      )
-    ) {
-      setProgramPlanId(storedProgram!);
-    }
-    setCustomDatasets(parsedDatasets);
-    setCustomProgramPlans(parsedProgramPlans);
-    setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
-    setSelectedByTerm(parsedSelections);
-    setDesignationsByTerm(parsedDesignations);
-    setHistoricalRecords(parsedHistoricalRecords);
-    setEnglishExemptionStatus(parsedExemption);
-    setStorageReady(true);
-    setStorageStatus('saved');
-    const needsInitialSetup =
-      window.localStorage.getItem(INITIAL_SETTINGS_STORAGE_KEY) !== '1';
-    setIsInitialSetup(needsInitialSetup);
-    setSettingsOpen(needsInitialSetup);
+      const nextActiveTerm =
+        storedActiveTerm &&
+        (TERM_TEMPLATE_IDS.has(storedActiveTerm) ||
+          parsedDatasets.some((dataset) => dataset.id === storedActiveTerm))
+          ? storedActiveTerm
+          : DEFAULT_TERM_ID;
+      const storedProgram = window.localStorage.getItem(
+        ACTIVE_PROGRAM_STORAGE_KEY,
+      );
+      if (
+        [...PROGRAM_PLANS, ...parsedProgramPlans].some(
+          (plan) => plan.id === storedProgram,
+        )
+      ) {
+        setProgramPlanId(storedProgram!);
+      }
+      setCustomDatasets(parsedDatasets);
+      setCustomProgramPlans(parsedProgramPlans);
+      setActiveTermId(nextActiveTerm ?? DEFAULT_TERM_ID);
+      setSelectedByTerm(parsedSelections);
+      setDesignationsByTerm(parsedDesignations);
+      setHistoricalRecords(parsedHistoricalRecords);
+      setEnglishExemptionStatus(parsedExemption);
+      setStorageReady(true);
+      setStorageStatus('saved');
+      const needsInitialSetup =
+        window.localStorage.getItem(INITIAL_SETTINGS_STORAGE_KEY) !== '1';
+      setIsInitialSetup(needsInitialSetup);
+      setSettingsOpen(needsInitialSetup);
     }, 0);
     return () => window.clearTimeout(restoration);
   }, []);
@@ -1596,14 +1721,27 @@ export default function CourseExplorer({
         (item) => item.id === dataset.id,
       );
       const previousSelectedIds = selectedByTerm[dataset.id] ?? [];
-      const update = reconcileCourseUpdate(previousDataset?.courses ?? [], dataset.courses,
-        previousSelectedIds, designationsByTerm[dataset.id] ?? {});
-      if (update.sectionChoices.length && !window.confirm(
-        '以下原计划课程对应多个正式班次。若继续，将暂选以下班次，请导入后核对时间或使用换班：\n' +
-        update.sectionChoices.join('\n') + '\n是否继续导入？')) return;
+      const update = reconcileCourseUpdate(
+        previousDataset?.courses ?? [],
+        dataset.courses,
+        previousSelectedIds,
+        designationsByTerm[dataset.id] ?? {},
+      );
+      if (
+        update.sectionChoices.length &&
+        !window.confirm(
+          '以下原计划课程对应多个正式班次。若继续，将暂选以下班次，请导入后核对时间或使用换班：\n' +
+            update.sectionChoices.join('\n') +
+            '\n是否继续导入？',
+        )
+      )
+        return;
       const updatedDataset = { ...dataset, courses: update.courses };
       const restoredIds = update.selectedIds;
-      setDesignationsByTerm((current) => ({ ...current, [dataset.id]: update.designations }));
+      setDesignationsByTerm((current) => ({
+        ...current,
+        [dataset.id]: update.designations,
+      }));
       setUndoSelection(null);
       setSelectionMessage('');
       setCustomDatasets((current) => [
@@ -1842,7 +1980,11 @@ export default function CourseExplorer({
       (item) => !groupedSubjects.has(item),
     );
     if (otherSubjects.length > 0) {
-      groups.push({ id: 'other-subjects', label: '其他学科/专业', items: otherSubjects });
+      groups.push({
+        id: 'other-subjects',
+        label: '其他学科/专业',
+        items: otherSubjects,
+      });
     }
     return groups;
   }, [availableProgramPlans, college, subjectsForCollege]);
@@ -1874,11 +2016,21 @@ export default function CourseExplorer({
         ? `已计入公共必修学位课 +${formatCredits(englishQualificationCredits)} 学分；计入秋季最低10学分，春季不重复增加。不替代博士学位英语。`
         : '已获得资格；历史英语课程已计入，免修免考学分不重复累计。'
       : '未计入英语免修免考学分，公共必修学位课不增加免修免考的 3 学分。';
-  const lectureProgress = useMemo(() => lectureGroups(historicalRecords), [historicalRecords]);
-  const confirmingLecture = lectureProgress.find(group => group.key === lectureConfirmation?.key);
-  const historyToVerify = historicalRecords.filter(record =>
-    (isAttendanceRecord(record) && (!lectureAcademicYear(record.term) || record.lectureStatus === undefined)) ||
-    doctoralProfessionalLevel(historicalCourseLike(record), activePlan) === 'verification');
+  const lectureProgress = useMemo(
+    () => lectureGroups(historicalRecords),
+    [historicalRecords],
+  );
+  const confirmingLecture = lectureProgress.find(
+    (group) => group.key === lectureConfirmation?.key,
+  );
+  const historyToVerify = historicalRecords.filter(
+    (record) =>
+      (isAttendanceRecord(record) &&
+        (!lectureAcademicYear(record.term) ||
+          record.lectureStatus === undefined)) ||
+      doctoralProfessionalLevel(historicalCourseLike(record), activePlan) ===
+        'verification',
+  );
   const hiasPreview = useMemo(() => {
     const attendanceCount = Number(hiasDraft.attendanceCount);
     if (!Number.isInteger(attendanceCount) || attendanceCount <= 0) {
@@ -1888,7 +2040,8 @@ export default function CourseExplorer({
     return { attendanceCount, hours, credits: Math.floor(hours / 20) };
   }, [hiasDraft.attendanceCount]);
   const countedSelectedCourses = useMemo(() => {
-    const historicalCourses = creditSummary.historicalRecords.map(historicalCourseLike);
+    const historicalCourses =
+      creditSummary.historicalRecords.map(historicalCourseLike);
     return selectedCourses.filter(
       (course) =>
         isCourseApplicable(course, activePlan) &&
@@ -1897,7 +2050,12 @@ export default function CourseExplorer({
           coursesShareIdentity(course, record),
         ),
     );
-  }, [englishExemptionStatus, activePlan, creditSummary.historicalRecords, selectedCourses]);
+  }, [
+    englishExemptionStatus,
+    activePlan,
+    creditSummary.historicalRecords,
+    selectedCourses,
+  ]);
   const countedProgramCourses = useMemo(() => {
     const counted: Course[] = [];
     allSelectedCourses.forEach((course) => {
@@ -2098,8 +2256,7 @@ export default function CourseExplorer({
     activePlan.publicRequiredDegreeCredits ?? null;
   const publicRequiredNonDegreeTarget =
     activePlan.publicRequiredNonDegreeCredits ?? null;
-  const publicElectiveTarget =
-    activePlan.publicElectiveCredits;
+  const publicElectiveTarget = activePlan.publicElectiveCredits;
   const programChecks = useMemo(
     () =>
       getProgramChecks({
@@ -2146,6 +2303,7 @@ export default function CourseExplorer({
   const filteredCourses = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     const matches = initialCourses.filter((course) => {
+      if (onlySelected) return selectedIds.includes(course.id);
       const matchesQuery =
         !normalized ||
         [
@@ -2178,6 +2336,7 @@ export default function CourseExplorer({
             !coursesConflict(course, selected),
         );
       return (
+        matchesPlanScope(course, activePlan, planScope) &&
         matchesQuery &&
         matchesCollege &&
         matchesSubject &&
@@ -2239,13 +2398,15 @@ export default function CourseExplorer({
     day,
     onlySelected,
     onlyNoConflict,
+    planScope,
     selectedIds,
     selectedCourses,
   ]);
 
   const recommendationPlans = useMemo<RecommendationPlan[]>(
     () =>
-      recommendationDialogOpen ? generateRecommendationPlans({
+      recommendationDialogOpen
+        ? generateRecommendationPlans({
             courses: initialCourses,
             selectedCourses,
             programCourses: allSelectedCourses,
@@ -2257,7 +2418,8 @@ export default function CourseExplorer({
             termId: activeTermId,
             allowApprovalRequired: allowCrossMajorRecommendations,
             futureCourses: futureSpringCourses,
-          }) : [],
+          })
+        : [],
     [
       activeDataset.label,
       allSelectedDesignations,
@@ -2377,7 +2539,10 @@ export default function CourseExplorer({
     if (!recommendation.addedCourses.length) return;
     rememberSelection();
     const additionsByFamily = new Map(
-      recommendation.addedCourses.map((course) => [courseFamilyKey(course), course]),
+      recommendation.addedCourses.map((course) => [
+        courseFamilyKey(course),
+        course,
+      ]),
     );
     setSelectedIdsForActive((current) => [
       ...current,
@@ -2398,12 +2563,21 @@ export default function CourseExplorer({
   }
 
   function showSelectedCourses() {
-    clearFilters();
-    setOnlySelected(true);
+    setMobilePlanOpen(false);
+    dispatchCatalog({ type: 'selected', scrollY: currentCatalogScroll() });
+    setWorkspaceMode('catalog');
     setView('courses');
   }
 
   function setView(nextView: typeof view) {
+    if (
+      view === 'courses' &&
+      workspaceMode === 'catalog' &&
+      !onlySelected &&
+      nextView !== 'courses'
+    )
+      patchCatalog({ scrollY: window.scrollY });
+    setMobilePlanOpen(false);
     setViewState(nextView);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
@@ -2469,21 +2643,35 @@ export default function CourseExplorer({
   }
 
   function clearFilters() {
-    setQuery('');
-    setCollege('全部院系');
-    setSubject('全部学科/专业');
-    setCategory('全部类别');
-    setDay('全部星期');
-    setOnlySelected(false);
-    setOnlyNoConflict(false);
+    dispatchCatalog({ type: 'reset' });
+  }
+  function currentCatalogScroll() {
+    return view === 'courses' && workspaceMode === 'catalog' && !onlySelected
+      ? window.scrollY
+      : catalogNavigation.current.scrollY;
+  }
+  function showCatalog() {
+    setMobilePlanOpen(false);
+    if (view !== 'courses' || workspaceMode !== 'catalog' || onlySelected)
+      dispatchCatalog({ type: 'browse' });
+    setWorkspaceMode('catalog');
+    setViewState('courses');
+  }
+  function showTimetable() {
+    setMobilePlanOpen(false);
+    if (view === 'courses' && workspaceMode === 'timetable') return;
+    patchCatalog({ scrollY: currentCatalogScroll() });
+    setWorkspaceMode('timetable');
+    setView('courses');
   }
 
   function switchTerm(termId: string) {
+    dispatchCatalog({ type: 'term', termId, scrollY: currentCatalogScroll() });
     setActiveTermId(termId);
+    setWorkspaceMode('catalog');
     setSelectionMessage('');
     setUndoSelection(null);
     setClearDialogOpen(false);
-    clearFilters();
     setDetailCourse(null);
     setDataError('');
     setDataMessage('');
@@ -2577,9 +2765,13 @@ export default function CourseExplorer({
     const value = raw as Partial<BackupPayload>;
     if (
       value.app !== 'HIAS-CSA' ||
-      (value.version !== 2 && value.version !== 3 && value.version !== BACKUP_VERSION)
+      (value.version !== 2 &&
+        value.version !== 3 &&
+        value.version !== BACKUP_VERSION)
     ) {
-      throw new Error(`仅支持 HIAS-CSA v2、v3 或 v${BACKUP_VERSION} 备份文件。`);
+      throw new Error(
+        `仅支持 HIAS-CSA v2、v3 或 v${BACKUP_VERSION} 备份文件。`,
+      );
     }
     if (
       !Array.isArray(value.customDatasets) ||
@@ -2604,11 +2796,22 @@ export default function CourseExplorer({
       !value.selectedByTerm ||
       typeof value.selectedByTerm !== 'object' ||
       Array.isArray(value.selectedByTerm) ||
-      !Object.values(value.selectedByTerm).every((ids) => Array.isArray(ids) && ids.every((id) => typeof id === 'string')) ||
+      !Object.values(value.selectedByTerm).every(
+        (ids) =>
+          Array.isArray(ids) && ids.every((id) => typeof id === 'string'),
+      ) ||
       !value.designationsByTerm ||
       typeof value.designationsByTerm !== 'object' ||
       Array.isArray(value.designationsByTerm) ||
-      !Object.values(value.designationsByTerm).every((entries) => entries && typeof entries === 'object' && !Array.isArray(entries) && Object.values(entries).every((designation) => ['degree', 'non-degree', 'unset'].includes(designation))) ||
+      !Object.values(value.designationsByTerm).every(
+        (entries) =>
+          entries &&
+          typeof entries === 'object' &&
+          !Array.isArray(entries) &&
+          Object.values(entries).every((designation) =>
+            ['degree', 'non-degree', 'unset'].includes(designation),
+          ),
+      ) ||
       !Array.isArray(value.programPlans) ||
       !value.programPlans.every(isProgramPlan) ||
       !Array.isArray(value.historicalRecords) ||
@@ -2620,8 +2823,10 @@ export default function CourseExplorer({
           typeof record.courseName === 'string' &&
           typeof record.courseCode === 'string' &&
           typeof record.credits === 'number' &&
-          Number.isFinite(record.credits) && record.credits >= 0 &&
-          typeof record.category === 'string' && validHistoryExtensions(record),
+          Number.isFinite(record.credits) &&
+          record.credits >= 0 &&
+          typeof record.category === 'string' &&
+          validHistoryExtensions(record),
       ) ||
       !['normal', 'planned', 'approved'].includes(
         value.englishExemptionStatus || '',
@@ -2732,9 +2937,9 @@ export default function CourseExplorer({
       );
       return;
     }
-    const matchedCourse = availableDatasets.flatMap(dataset => dataset.courses).find(
-      (course) => course.code.toUpperCase() === courseCode,
-    );
+    const matchedCourse = availableDatasets
+      .flatMap((dataset) => dataset.courses)
+      .find((course) => course.code.toUpperCase() === courseCode);
     setHistoricalRecords((current) => [
       ...current,
       {
@@ -2780,7 +2985,8 @@ export default function CourseExplorer({
         id: `history-hias-${Date.now()}`,
         term: hiasDraft.term.trim() || '学期待补充',
         courseName: lectureName,
-        courseCode: hiasDraft.kind === 'hias' ? 'HIAS-LECTURE' : 'FRONTIER-LECTURE',
+        courseCode:
+          hiasDraft.kind === 'hias' ? 'HIAS-LECTURE' : 'FRONTIER-LECTURE',
         credits: 0,
         category: hiasDraft.kind === 'hias' ? '公共选修课' : '科学前沿讲座',
         subject: lectureName,
@@ -2790,7 +2996,8 @@ export default function CourseExplorer({
         hours,
         attendanceCount,
         courseCount: 0,
-        source: '用户登记学时·每次2学时，同学年同类别每满20学时预计1分，学年结束认定',
+        source:
+          '用户登记学时·每次2学时，同学年同类别每满20学时预计1分，学年结束认定',
       },
     ]);
     setHiasDraft((current) => ({ ...current, attendanceCount: '' }));
@@ -2844,20 +3051,415 @@ export default function CourseExplorer({
     ...(day !== '全部星期'
       ? [{ label: day, clear: () => setDay('全部星期') }]
       : []),
+    ...(planScope !== 'all'
+      ? [
+          {
+            label: planScope === 'core' ? '本方案核心课' : '本方案专业课',
+            clear: () => patchCatalog({ scope: 'all' }),
+          },
+        ]
+      : []),
     ...(onlyNoConflict
-      ? [{ label: '避开时间冲突', clear: () => setOnlyNoConflict(false) }]
+      ? [{ label: '避开已知时间冲突', clear: () => setOnlyNoConflict(false) }]
       : []),
   ];
   const navigation = [
-    { value: 'courses', label: '选课程', icon: BookOpen },
-    { value: 'guide', label: '培养要求', icon: GraduationCap },
-    { value: 'exams', label: '考试压力', icon: BarChart3 },
+    { value: 'courses', label: '选课工作台', icon: BookOpen },
+    { value: 'guide', label: '培养进度', icon: GraduationCap },
+    { value: 'exams', label: '考核分布', icon: BarChart3 },
     { value: 'notice', label: '选课须知', icon: Info },
-    { value: 'data', label: '数据管理', icon: RefreshCw },
+    { value: 'data', label: '工具与数据', icon: RefreshCw },
   ] as const;
 
+  const selectionPanel = (
+    <aside className="selection-sidebar" aria-label="本学期选课方案">
+      <div className="selection-summary-head">
+        <span>我的预选方案</span>
+        <span className="local-save-state">
+          {!storageReady
+            ? '正在恢复…'
+            : storageStatus === 'error'
+              ? '保存失败'
+              : storageStatus === 'synced'
+                ? '已同步'
+                : '已保存在本机'}
+        </span>
+      </div>
+      <div className="selection-numbers">
+        <div>
+          <strong>{formatCredits(selectedCredits)}</strong>
+          <span>方案学分合计</span>
+        </div>
+        <button type="button" onClick={showSelectedCourses}>
+          <strong>{selectedCourses.length}</strong>
+          <span>
+            已选课程 <ArrowRight />
+          </span>
+        </button>
+      </div>
+      <div className="plan-eligible">
+        <span>本学期有效学分</span>
+        <strong>
+          {formatCredits(semesterEligibleCredits)}
+          {programGaps.semesterMinimumTarget !== null && (
+            <small> / {programGaps.semesterMinimumTarget}</small>
+          )}
+        </strong>
+        <p>按现有培养规则计算，与方案合计口径不同。</p>
+      </div>
+      <div className="plan-next-steps">
+        <h3>方案检查</h3>
+        <div className="plan-course-shortcuts">
+          <button
+            type="button"
+            onClick={() => {
+              dispatchCatalog({
+                type: 'focus',
+                scope: 'core',
+                scrollY: currentCatalogScroll(),
+              });
+              setView('courses');
+              setWorkspaceMode('catalog');
+            }}
+          >
+            核心课累计 {programGaps.coreCount} /{' '}
+            {programGaps.coreTarget ?? '待确认'} · 找核心课
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              dispatchCatalog({
+                type: 'focus',
+                scope: 'professional',
+                scrollY: currentCatalogScroll(),
+              });
+              setView('courses');
+              setWorkspaceMode('catalog');
+            }}
+          >
+            专业课累计 {programGaps.professionalCount} /{' '}
+            {programGaps.professionalTarget ?? '待确认'} · 找专业课
+          </button>
+        </div>
+        {selectedCourses.some((course) => !course.schedules.length) && (
+          <p className="plan-warning">
+            <Clock3 aria-hidden="true" /> 有课程上课时间待确认
+          </p>
+        )}
+        {conflictPairs.length > 0 && (
+          <p className="plan-warning">
+            <TriangleAlert aria-hidden="true" /> {conflictPairs.length}{' '}
+            组已知时间冲突，查看上方冲突明细
+          </p>
+        )}
+        {[...programChecks]
+          .sort(
+            (a, b) =>
+              ({ must_handle: 0, verification: 1, progress: 2 })[a.severity] -
+              { must_handle: 0, verification: 1, progress: 2 }[b.severity],
+          )
+          .slice(0, 3)
+          .map((check) => (
+            <button
+              key={check.id}
+              type="button"
+              onClick={() => setView('guide')}
+            >
+              <span>
+                {check.severity === 'verification'
+                  ? '待核对'
+                  : check.severity === 'must_handle'
+                    ? '需处理'
+                    : '培养累计'}
+              </span>
+              <strong>{check.label}</strong>
+              <small>{check.detail}</small>
+            </button>
+          ))}
+        {!programChecks.length && (
+          <p>当前检查未发现待处理项；请继续核对正式培养材料。</p>
+        )}
+        <button
+          className="plan-full-progress"
+          type="button"
+          onClick={() => setView('guide')}
+        >
+          查看全部培养进度 <ArrowRight aria-hidden="true" />
+        </button>
+      </div>
+      {englishQualificationCredits > 0 && (
+        <p className="selection-exemption-note">
+          <CheckCircle2 />
+          方案合计含英语免修免考 +{formatCredits(
+            englishQualificationCredits,
+          )}{' '}
+          学分
+        </p>
+      )}
+      <button
+        type="button"
+        className="plan-context-link"
+        onClick={() => setSettingsOpen(true)}
+      >
+        <GraduationCap />
+        <span>
+          {activePlan.label}
+          <small>
+            英语免修免考：{englishStatusLabel(englishExemptionStatus)}
+          </small>
+        </span>
+        <Settings2 />
+      </button>
+      {selectedCourses.length ? (
+        <>
+          <div className="selection-list-heading">
+            <h3>已选课程</h3>
+            <button type="button" onClick={showSelectedCourses}>
+              查看全部
+            </button>
+          </div>
+          <div className="selection-list">
+            {selectedCourses.map((course) => (
+              <div
+                key={course.id}
+                data-recent-selection={
+                  undoSelection?.termId === activeTermId &&
+                  !undoSelection.ids.includes(course.id)
+                    ? ''
+                    : undefined
+                }
+                className={conflictingIds.has(course.id) ? 'has-conflict' : ''}
+              >
+                <button type="button" onClick={() => setDetailCourse(course)}>
+                  <strong>{course.name}</strong>
+                  <span>
+                    {formatCredits(course.credits)} 学分 ·{' '}
+                    {course.schedules[0]?.periodText || '时间待定'}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={'移除' + course.name}
+                  onClick={() => toggleCourse(course.id)}
+                >
+                  <X />
+                </button>
+              </div>
+            ))}
+          </div>
+          <Collapsible className="credit-details">
+            <CollapsibleTrigger>
+              学分分类明细
+              <ChevronDown />
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <h4>课程类别</h4>
+              <div className="credit-breakdown">
+                {selectedCreditBreakdown.map(([label, credits]) => (
+                  <span key={label}>
+                    {label} {formatCredits(credits)}
+                  </span>
+                ))}
+              </div>
+              <h4>培养要求归属</h4>
+              <div className="credit-breakdown">
+                {selectedRequirementBreakdown.map(([type, credits]) => (
+                  <span key={type}>
+                    {getCourseRequirementTypeLabel(type)}{' '}
+                    {formatCredits(credits)}
+                  </span>
+                ))}
+              </div>
+              {creditSummary.duplicatePlannedCourseCount > 0 && (
+                <p>
+                  有 {creditSummary.duplicatePlannedCourseCount}{' '}
+                  门已修课程，已避免重复计分。
+                </p>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+        </>
+      ) : (
+        <div className="selection-empty">
+          <CalendarDays />
+          <p>把想学的课程加入课表</p>
+          <span>这里会实时汇总学分与安排</span>
+        </div>
+      )}
+      <div className="selection-actions">
+        <Button onClick={showTimetable}>
+          <CalendarDays />
+          查看我的课表
+        </Button>
+        <Button
+          variant="outline"
+          disabled={!selectedCourses.length}
+          onClick={exportSelected}
+        >
+          <Download />
+          导出课表 CSV
+        </Button>
+      </div>
+      <p className="export-hint">CSV 可导入 WakeUp 课程表</p>
+      {
+        <button
+          type="button"
+          className="recommendation-link"
+          onClick={() => setRecommendationDialogOpen(true)}
+        >
+          <Sparkles />
+          智能补全方案
+          <ArrowRight />
+        </button>
+      }
+      <button
+        type="button"
+        className="clear-selection"
+        disabled={!selectedCourses.length}
+        onClick={() => setClearDialogOpen(true)}
+      >
+        <Trash2 />
+        清空当前学期
+      </button>
+    </aside>
+  );
+
+  const timetableContent = (
+    <div className="workspace-timetable-content">
+      {selectedCourses.some((course) => !course.schedules.length) && (
+        <p className="plan-warning">
+          <Clock3 aria-hidden="true" />
+          有课程时间待确认，尚未绘入课表。
+        </p>
+      )}
+      {selectedCourses.length > 0 &&
+        !selectedCourses.some((course) =>
+          course.schedules.some((schedule) => schedule.weeks.includes(week)),
+        ) && (
+          <p className="browse-return-note">
+            本周没有已知排课，可切换周次查看其他安排。
+          </p>
+        )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs leading-5 text-slate-500">
+          桌面端横向滚动可查看完整一周；点击课程块可查看课程详情。
+        </p>
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+          查看周次
+          <NativeSelect
+            aria-label="查看周次"
+            className="min-w-28 [&>select]:h-10"
+            onChange={(event) => setWeek(Number(event.target.value))}
+            value={week}
+          >
+            {Array.from({ length: 20 }, (_, index) => index + 1).map(
+              (value) => (
+                <NativeSelectOption key={value} value={value}>
+                  第 {value} 周
+                </NativeSelectOption>
+              ),
+            )}
+          </NativeSelect>
+        </label>
+      </div>
+      {selectedCourses.length ? (
+        <div className="min-w-0 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          {currentWeekConflicts.size > 0 && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              <Zap className="size-4" /> 本周有 {currentWeekConflicts.size}{' '}
+              门课程时间重叠，已用红色标出。
+            </div>
+          )}
+          <div className="w-full min-w-0 overflow-x-auto pb-2">
+            <div className="timetable-grid">
+              <div className="timetable-corner">节次</div>
+              {DAYS.map((label, index) => (
+                <div
+                  className="timetable-day"
+                  key={label}
+                  style={{ gridColumn: index + 2, gridRow: 1 }}
+                >
+                  {label}
+                </div>
+              ))}
+              {Array.from({ length: 13 }, (_, index) => index + 1).map(
+                (period) => (
+                  <div
+                    className="timetable-period"
+                    key={period}
+                    style={{ gridColumn: 1, gridRow: period + 1 }}
+                  >
+                    <strong>{period}</strong>
+                    <span>第 {period} 节</span>
+                  </div>
+                ),
+              )}
+              {DAYS.flatMap((_, dayIndex) =>
+                Array.from({ length: 13 }, (_, index) => index + 1).map(
+                  (period) => (
+                    <div
+                      className="timetable-cell"
+                      key={`${dayIndex}-${period}`}
+                      style={{
+                        gridColumn: dayIndex + 2,
+                        gridRow: period + 1,
+                      }}
+                    />
+                  ),
+                ),
+              )}
+              {selectedCourses.flatMap((course) =>
+                course.schedules
+                  .filter((schedule) => schedule.weeks.includes(week))
+                  .map((schedule, scheduleIndex) => {
+                    const color = courseColor(course.id);
+                    const conflict = currentWeekConflicts.has(course.id);
+                    return (
+                      <button
+                        className={`timetable-course ${conflict ? 'timetable-course-conflict' : ''}`}
+                        key={`${course.id}-${scheduleIndex}`}
+                        onClick={() => setDetailCourse(course)}
+                        style={{
+                          gridColumn: schedule.dayIndex + 2,
+                          gridRow: `${schedule.start + 1} / ${schedule.end + 2}`,
+                          backgroundColor: conflict ? '#ffe4e6' : color[0],
+                          borderColor: conflict ? '#e11d48' : color[1],
+                          color: conflict ? '#9f1239' : color[1],
+                        }}
+                        type="button"
+                      >
+                        <strong>{course.name}</strong>
+                        <span>{schedule.room}</span>
+                      </button>
+                    );
+                  }),
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="empty-state">
+          <CalendarDays />
+          <h3>课表还是空的</h3>
+          <p>回到课程列表，点击「加入课表」即可加入。</p>
+          <Button
+            onClick={() => {
+              setTimetableOpen(false);
+              showCatalog();
+            }}
+          >
+            去选择课程
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
-    <main className="course-app">
+    <main
+      className="course-app workspace-redesigned"
+      data-layout={catalogLayout}
+    >
       <a className="skip-link" href="#workspace-content">
         跳到主要内容
       </a>
@@ -2921,26 +3523,53 @@ export default function CourseExplorer({
         </header>
         <div className="context-caption">
           <span>{audienceLabel} · 非官方模拟选课</span>
-          <button type="button" onClick={() => setFeedbackContext({ term: activeDataset.label })}>意见反馈</button>
+          <button
+            type="button"
+            onClick={() => setFeedbackContext({ term: activeDataset.label })}
+          >
+            意见反馈
+          </button>
           <span>最终课程安排以学校正式通知为准</span>
         </div>
         {storageReady && roomCorrection.changes.length > 0 && (
           <div className="workspace-feedback">
-            <p>当前导入数据仍使用旧教室：《光电子材料与器件》13-110 → 13-312（2026-09-11 更新）。</p>
+            <p>
+              当前导入数据仍使用旧教室：《光电子材料与器件》13-110 →
+              13-312（2026-09-11 更新）。
+            </p>
             <p>只更新这门课的旧教室，保留时间、周次、已选课程和学位属性。</p>
-            <Button variant="outline" onClick={() => {
-              setCustomDatasets((datasets) => datasets.map((dataset) => dataset.id === activeDataset.id
-                ? { ...dataset, courses: correctKnownRooms(dataset.id, dataset.courses).courses } : dataset));
-              setDataMessage('已更新《光电子材料与器件》教室为 13-312；已有选课和学位属性已保留。');
-            }}>应用教室更新</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCustomDatasets((datasets) =>
+                  datasets.map((dataset) =>
+                    dataset.id === activeDataset.id
+                      ? {
+                          ...dataset,
+                          courses: correctKnownRooms(
+                            dataset.id,
+                            dataset.courses,
+                          ).courses,
+                        }
+                      : dataset,
+                  ),
+                );
+                setDataMessage(
+                  '已更新《光电子材料与器件》教室为 13-312；已有选课和学位属性已保留。',
+                );
+              }}
+            >
+              应用教室更新
+            </Button>
           </div>
         )}
         <Tabs
           className="workspace-tabs"
+          orientation={verticalNavigation ? 'vertical' : 'horizontal'}
           value={view}
           onValueChange={(value) => {
-            setView(value as typeof view);
-            window.scrollTo({ top: 0, behavior: 'instant' });
+            if (value === 'courses') showCatalog();
+            else setView(value as typeof view);
           }}
         >
           <div className="workspace-nav">
@@ -3067,489 +3696,661 @@ export default function CourseExplorer({
             >
               {view === 'courses' ? (
                 <section className="catalog-page py-6">
-                  <div className="catalog-heading section-heading mb-4 flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                      <h2>
-                        {onlySelected ? '已选课程' : '选择本学期课程'}{' '}
-                        <span className="result-count">
-                          {filteredCourses.length}
-                        </span>
-                      </h2>
-                      <div className="section-description">
-                        {onlySelected
-                          ? '查看已选安排，点击课程名称核对详情。'
-                          : '按课程、教师或上课时间查找，加入你的模拟课表。'}
-                      </div>
-                    </div>
-                    <div className="catalog-display-controls">
-                      <div
-                        className="catalog-density"
-                        aria-label="课程信息密度"
-                      >
-                        <button
-                          type="button"
-                          aria-pressed={compactCatalog}
-                          onClick={() => setCompactCatalog(true)}
-                        >
-                          紧凑
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={!compactCatalog}
-                          onClick={() => setCompactCatalog(false)}
-                        >
-                          完整
-                        </button>
-                      </div>
-                      <p className="text-sm text-slate-500">
-                        已显示 {Math.min(visibleCount, filteredCourses.length)}{' '}
-                        / {filteredCourses.length}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="catalog-plan-strip">
-                    <GraduationCap aria-hidden="true" />
-                    <div>
-                      <strong>{activePlan.label}</strong>
-                      <span>优先浏览方案核心课、专业课，再补充必修与选修</span>
-                    </div>
-                    <button type="button" onClick={() => setSettingsOpen(true)}>
-                      调整培养设置 <Settings2 aria-hidden="true" />
+                  <div
+                    className="workspace-view-switch"
+                    aria-label="工作台视图"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={workspaceMode === 'catalog'}
+                      onClick={showCatalog}
+                    >
+                      <BookOpen aria-hidden="true" />
+                      课程目录
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={workspaceMode === 'timetable'}
+                      onClick={showTimetable}
+                    >
+                      <CalendarDays aria-hidden="true" />
+                      我的课表
                     </button>
                   </div>
-
-                  <div className="catalog-filters">
-                    <div className="search-row">
-                      <div className="search-field">
-                        <Search aria-hidden="true" />
-                        <Input
-                          id="course-search"
-                          aria-label="搜索课程"
-                          placeholder="课程名称、编码、教师或教室"
-                          value={query}
-                          onChange={(event) => setQuery(event.target.value)}
-                        />
-                        {query && (
-                          <button
-                            type="button"
-                            aria-label="清空搜索关键词"
-                            onClick={() => setQuery('')}
-                          >
-                            <X />
-                          </button>
-                        )}
-                      </div>
-                      <Button
-                        variant="outline"
-                        className="filter-toggle"
-                        aria-expanded={filtersOpen}
-                        aria-controls="advanced-filters"
-                        onClick={() => setFiltersOpen((open) => !open)}
-                      >
-                        <SlidersHorizontal /> 筛选
-                        {activeFilterChips.length > 0 && (
-                          <b>{activeFilterChips.length}</b>
-                        )}
-                      </Button>
-                    </div>
-                    <Collapsible
-                      open={filtersOpen}
-                      onOpenChange={setFiltersOpen}
-                    >
-                      <CollapsibleContent id="advanced-filters">
-                        <div className="filter-reveal-inner">
-                          <div className="advanced-filters">
-                            {' '}
-                            <NativeSelect
-                              aria-label="按开课院系筛选"
-                              className="w-full [&>select]:h-11"
-                              onChange={(event) => {
-                                setCollege(event.target.value);
-                                setSubject('全部学科/专业');
-                              }}
-                              value={college}
-                            >
-                              <NativeSelectOption value="全部院系">
-                                全部院系
-                              </NativeSelectOption>
-                              {colleges.map((item) => (
-                                <NativeSelectOption key={item} value={item}>
-                                  {item}
-                                </NativeSelectOption>
-                              ))}
-                            </NativeSelect>
-                            <NativeSelect
-                              aria-label="按所属学科或专业筛选（需先选择学院）"
-                              className="w-full [&>select]:h-11"
-                              onChange={(event) => setSubject(event.target.value)}
-                              value={subject}
-                              disabled={college === '全部院系'}
-                            >
-                              <NativeSelectOption value="全部学科/专业">
-                                全部学科/专业
-                              </NativeSelectOption>
-                              {subjectGroups.map((group) => (
-                                <optgroup key={group.id} label={group.label}>
-                                  {group.items.length > 0 ? (
-                                    group.items.map((item) => (
-                                      <NativeSelectOption key={item} value={item}>
-                                        {item}
-                                      </NativeSelectOption>
-                                    ))
-                                  ) : (
-                                    <NativeSelectOption
-                                      disabled
-                                      value={'empty-' + group.id}
-                                    >
-                                      暂无已载入专业
-                                    </NativeSelectOption>
-                                  )}
-                                </optgroup>
-                              ))}
-                            </NativeSelect>
-                            <NativeSelect
-                              aria-label="按课程类别筛选"
-                              className="w-full [&>select]:h-11"
-                              onChange={(event) =>
-                                setCategory(event.target.value)
-                              }
-                              value={category}
-                            >
-                              <NativeSelectOption value="全部类别">
-                                全部课程类别
-                              </NativeSelectOption>
-                              {categories.map((item) => (
-                                <NativeSelectOption key={item} value={item}>
-                                  {item}
-                                </NativeSelectOption>
-                              ))}
-                            </NativeSelect>
-                            <NativeSelect
-                              aria-label="按星期筛选"
-                              className="w-full [&>select]:h-11"
-                              onChange={(event) => setDay(event.target.value)}
-                              value={day}
-                            >
-                              <NativeSelectOption value="全部星期">
-                                全部星期
-                              </NativeSelectOption>
-                              {DAYS.map((item) => (
-                                <NativeSelectOption key={item} value={item}>
-                                  {item}
-                                </NativeSelectOption>
-                              ))}
-                            </NativeSelect>
-                          </div>
+                  {workspaceMode === 'timetable' ? (
+                    <div className="inline-timetable">
+                      <div className="section-heading">
+                        <div>
+                          <h2>我的模拟课表</h2>
+                          <p>
+                            第 {week} 周 · 已选 {selectedCourses.length} 门课程
+                          </p>
                         </div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                    <div className="filter-bottom-row">
-                      <div className="catalog-scope" aria-label="课程范围">
-                        <button
-                          type="button"
-                          aria-pressed={!onlySelected}
-                          onClick={() => setOnlySelected(false)}
-                        >
-                          全部课程
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={onlySelected}
-                          onClick={showSelectedCourses}
-                        >
-                          已选 <b>{selectedCourses.length}</b>
-                        </button>
-                      </div>
-                      <label className="conflict-filter">
-                        <input
-                          type="checkbox"
-                          checked={onlyNoConflict}
-                          onChange={(event) =>
-                            setOnlyNoConflict(event.target.checked)
-                          }
-                        />
-                        避开时间冲突
-                      </label>
-                    </div>
-                    {activeFilterChips.length > 0 && (
-                      <div
-                        className="active-filters"
-                        aria-label="已启用的筛选条件"
-                      >
-                        {activeFilterChips.map((chip) => (
-                          <button
-                            key={chip.label}
-                            type="button"
-                            onClick={chip.clear}
-                            aria-label={'取消筛选：' + chip.label}
-                          >
-                            {chip.label}
-                            <X />
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          className="reset-filters"
-                          onClick={clearFilters}
-                        >
-                          重置筛选
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {onlySelected && selectedCourses.length > 0 && (
-                    <div className="selected-toolbar">
-                      <Button
-                        variant="outline"
-                        onClick={() => setTimetableOpen(true)}
-                      >
-                        <CalendarDays />
-                        查看课表
-                      </Button>
-                      <Button variant="outline" onClick={exportSelected}>
-                        <Download />
-                        导出 CSV
-                      </Button>
-                      {(
                         <Button
                           variant="outline"
-                          onClick={() => setRecommendationDialogOpen(true)}
+                          onClick={() => setTimetableOpen(true)}
                         >
-                          <Sparkles />
-                          补充建议
+                          展开完整课表
                         </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        className="text-rose-700"
-                        onClick={() => setClearDialogOpen(true)}
-                      >
-                        <Trash2 />
-                        清空本学期
-                      </Button>
-                    </div>
-                  )}
-                  {filteredCourses.length ? (
-                    <div
-                      className={`catalog-grid ${compactCatalog ? 'catalog-compact' : ''}`}
-                    >
-                      {filteredCourses.slice(0, visibleCount).map((course) => {
-                        const selected = selectedIds.includes(course.id);
-                        const conflict =
-                          selected && conflictingIds.has(course.id);
-                        const peers = selected
-                          ? (conflictPeers.get(course.id) ?? [])
-                          : selectedCourses.filter(
-                              (other) =>
-                                courseFamilyKey(other) !==
-                                  courseFamilyKey(course) &&
-                                coursesConflict(course, other),
-                            );
-                        return (
-                          <article
-                            className={`course-card ${selected ? 'course-card-selected' : ''} ${conflict ? 'course-card-conflict' : ''}`}
-                            key={course.id}
-                            data-recent-selection={
-                              selected &&
-                              undoSelection?.termId === activeTermId &&
-                              !undoSelection.ids.includes(course.id)
-                                ? ''
-                                : undefined
-                            }
-                          >
-                            <div className="course-card-heading">
-                              <h3>
-                                <button
-                                  className="course-title"
-                                  onClick={() => setDetailCourse(course)}
-                                  type="button"
-                                >
-                                  {course.name}
-                                </button>
-                              </h3>
-                              <div className="course-credit">
-                                <strong>{formatCredits(course.credits)}</strong>
-                                <span>学分</span>
-                              </div>
-                            </div>
-                            <div className="course-tags">
-                              <Badge variant="secondary">
-                                {course.category}
-                              </Badge>
-                              {course.scheduleStatus === 'planned' && (
-                                <Badge className="bg-amber-50 text-amber-700" variant="secondary">
-                                  春季计划课程
-                                </Badge>
-                              )}
-                              {!isCourseApplicableToPlan(course, activePlan) && (
-                                <Badge className="bg-slate-100 text-slate-600" variant="secondary">
-                                  当前培养类型不适用
-                                </Badge>
-                              )}
-                              {activePlan.coreCourses.includes(course.name) ? (
-                                <Badge
-                                  className="bg-indigo-50 text-indigo-700"
-                                  variant="secondary"
-                                >
-                                  方案核心课
-                                </Badge>
-                              ) : activePlan.professionalCourses.includes(
-                                  course.name,
-                                ) ? (
-                                <Badge
-                                  className="bg-indigo-50 text-indigo-700"
-                                  variant="secondary"
-                                >
-                                  方案专业课
-                                </Badge>
-                              ) : null}
-                              {isInnovationCourse(course) && (
-                                <Badge variant="secondary">创新创业</Badge>
-                              )}
-                              {selected && (
-                                <Badge variant="secondary">
-                                  {designationLabel(courseDesignation(course))}
-                                </Badge>
-                              )}
-                              {selected &&
-                                courseDesignation(course) === 'degree' && (
-                                  <Badge variant="outline">
-                                    {recognitionStatusLabel(
-                                      getCourseRoleEligibility(course, activePlan)
-                                        .status,
-                                    )}
-                                  </Badge>
-                                )}
-                            </div>
-                            <div className="course-divider my-3.5 h-px bg-slate-100" />
-                            <div className="course-people grid grid-cols-2 gap-3 text-sm">
-                              <div className="info-pair">
-                                <Users />
-                                <span>
-                                  <strong>{course.teacher}</strong>
-                                  <small>任课教师</small>
-                                </span>
-                              </div>
-                              <div className="info-pair">
-                                <GraduationCap />
-                                <span>
-                                  <strong>{course.subject}</strong>
-                                  <small>{course.college}</small>
-                                </span>
-                              </div>
-                            </div>
-                            <div className="course-extra mt-4">
-                              <span>
-                                <ClipboardCheck />{' '}
-                                {course.examMode || '考试方式待定'}
-                              </span>
-                              <span>
-                                <Presentation />{' '}
-                                {course.teachingMode || '授课方式待定'}
-                              </span>
-                              <span>
-                                <Clock3 /> {course.hours || '学时待定'}
-                              </span>
-                            </div>
-                            {peers.length > 0 && (
-                              <div className="course-conflict-note">
-                                <Zap />
-                                <span>
-                                  与 {peers.map((peer) => peer.name).join('、')}{' '}
-                                  的上课时间冲突
-                                </span>
-                              </div>
-                            )}
-                            <div className="course-time-block">
-                              <div className="course-schedule-label">
-                                <CalendarDays aria-hidden="true" />上课安排
-                              </div>
-                              {course.schedules.length ? (
-                                <ScheduleLines schedules={course.schedules} />
-                              ) : (
-                                <span className="text-sm text-amber-700">
-                                  待春季正式课表公布
-                                </span>
-                              )}
-                            </div>
-                            <div className="course-enrollment">
-                              {formatEnrollment(course)}
-                            </div>
-                            <div className="course-card-footer">
-                              <button
-                                className="course-detail-link"
-                                type="button"
-                                onClick={() => setDetailCourse(course)}
-                              >
-                                课程详情
-                                <ArrowRight />
-                              </button>
-                              <Button
-                                disabled={!storageReady}
-                                variant={selected ? 'outline' : 'default'}
-                                aria-pressed={selected}
-                                aria-label={
-                                  (selected ? '移除' : '选择') + course.name
-                                }
-                                onClick={() => toggleCourse(course.id)}
-                              >
-                                {selected ? <CheckCircle2 /> : <Plus />}
-                                {selected ? '已选 · 移除' : '加入课表'}
-                              </Button>
-                            </div>
-                          </article>
-                        );
-                      })}
+                      </div>
+                      {timetableContent}
                     </div>
                   ) : (
-                    <div className="empty-state">
-                      <SlidersHorizontal />
-                      <h3>
-                        {!initialCourses.length
-                          ? '本学期尚未载入课程数据'
-                          : onlySelected && !selectedCourses.length
-                            ? '还没有选择课程'
-                            : '没有找到匹配课程'}
-                      </h3>
-                      <p>
-                        {initialCourses.length
-                          ? onlySelected && !selectedCourses.length
-                            ? '切换到全部课程，找到想学的课程后点击「加入课表」。'
-                            : '试试缩短关键词，或取消上方的筛选条件。'
-                          : '请在“数据管理”中导入本学期课程 JSON；当前学期的选课记录会独立保存。'}
-                      </p>
-                      <div className="flex flex-wrap justify-center gap-2">
-                        <Button onClick={clearFilters} variant="outline">
-                          {onlySelected && !selectedCourses.length
-                            ? '浏览全部课程'
-                            : '重置筛选'}
-                        </Button>
-                        {!initialCourses.length && (
-                          <Button
-                            onClick={() => setView('data')}
-                            variant="outline"
+                    <>
+                      <div className="catalog-heading section-heading mb-4 flex flex-wrap items-end justify-between gap-3">
+                        <div>
+                          <h2>
+                            {onlySelected ? '已选课程' : '选择本学期课程'}{' '}
+                            <span className="result-count">
+                              {filteredCourses.length}
+                            </span>
+                          </h2>
+                          <div className="section-description">
+                            {onlySelected
+                              ? '查看已选安排，点击课程名称核对详情。'
+                              : '按课程、教师或上课时间查找，加入你的模拟课表。'}
+                          </div>
+                        </div>
+                        <div className="catalog-display-controls">
+                          <div
+                            className="catalog-density"
+                            aria-label="课程显示方式"
                           >
-                            打开数据管理
+                            <button
+                              type="button"
+                              aria-pressed={catalogLayout === 'list'}
+                              onClick={() => setCatalogLayout('list')}
+                            >
+                              列表
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={catalogLayout === 'cards'}
+                              onClick={() => setCatalogLayout('cards')}
+                            >
+                              卡片
+                            </button>
+                          </div>
+                          <p className="text-sm text-slate-500">
+                            已显示{' '}
+                            {Math.min(visibleCount, filteredCourses.length)} /{' '}
+                            {filteredCourses.length}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="catalog-plan-strip">
+                        <GraduationCap aria-hidden="true" />
+                        <div>
+                          <strong>{activePlan.label}</strong>
+                          <span>
+                            优先浏览方案核心课、专业课，再补充必修与选修
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSettingsOpen(true)}
+                        >
+                          调整培养设置 <Settings2 aria-hidden="true" />
+                        </button>
+                      </div>
+
+                      <div className="catalog-filters" hidden={onlySelected}>
+                        <div className="search-row">
+                          <div className="search-field">
+                            <Search aria-hidden="true" />
+                            <Input
+                              id="course-search"
+                              aria-label="搜索课程"
+                              placeholder="课程名称、编码、教师或教室"
+                              value={query}
+                              onChange={(event) => setQuery(event.target.value)}
+                            />
+                            {query && (
+                              <button
+                                type="button"
+                                aria-label="清空搜索关键词"
+                                onClick={() => setQuery('')}
+                              >
+                                <X />
+                              </button>
+                            )}
+                          </div>
+                          <Button
+                            variant="outline"
+                            className="filter-toggle"
+                            aria-expanded={filtersOpen}
+                            aria-controls="advanced-filters"
+                            onClick={() => setFiltersOpen((open) => !open)}
+                          >
+                            <SlidersHorizontal /> 筛选
+                            {activeFilterChips.length > 0 && (
+                              <b>{activeFilterChips.length}</b>
+                            )}
                           </Button>
+                        </div>
+                        <Collapsible
+                          open={filtersOpen}
+                          onOpenChange={setFiltersOpen}
+                        >
+                          <CollapsibleContent id="advanced-filters">
+                            <div className="filter-reveal-inner">
+                              <div className="advanced-filters">
+                                {' '}
+                                <NativeSelect
+                                  aria-label="按开课院系筛选"
+                                  className="w-full [&>select]:h-11"
+                                  onChange={(event) => {
+                                    setCollege(event.target.value);
+                                    setSubject('全部学科/专业');
+                                  }}
+                                  value={college}
+                                >
+                                  <NativeSelectOption value="全部院系">
+                                    全部院系
+                                  </NativeSelectOption>
+                                  {colleges.map((item) => (
+                                    <NativeSelectOption key={item} value={item}>
+                                      {item}
+                                    </NativeSelectOption>
+                                  ))}
+                                </NativeSelect>
+                                <NativeSelect
+                                  aria-label="按所属学科或专业筛选（需先选择学院）"
+                                  className="w-full [&>select]:h-11"
+                                  onChange={(event) =>
+                                    setSubject(event.target.value)
+                                  }
+                                  value={subject}
+                                  disabled={college === '全部院系'}
+                                >
+                                  <NativeSelectOption value="全部学科/专业">
+                                    全部学科/专业
+                                  </NativeSelectOption>
+                                  {subjectGroups.map((group) => (
+                                    <optgroup
+                                      key={group.id}
+                                      label={group.label}
+                                    >
+                                      {group.items.length > 0 ? (
+                                        group.items.map((item) => (
+                                          <NativeSelectOption
+                                            key={item}
+                                            value={item}
+                                          >
+                                            {item}
+                                          </NativeSelectOption>
+                                        ))
+                                      ) : (
+                                        <NativeSelectOption
+                                          disabled
+                                          value={'empty-' + group.id}
+                                        >
+                                          暂无已载入专业
+                                        </NativeSelectOption>
+                                      )}
+                                    </optgroup>
+                                  ))}
+                                </NativeSelect>
+                                <NativeSelect
+                                  aria-label="按课程类别筛选"
+                                  className="w-full [&>select]:h-11"
+                                  onChange={(event) =>
+                                    setCategory(event.target.value)
+                                  }
+                                  value={category}
+                                >
+                                  <NativeSelectOption value="全部类别">
+                                    全部课程类别
+                                  </NativeSelectOption>
+                                  {categories.map((item) => (
+                                    <NativeSelectOption key={item} value={item}>
+                                      {item}
+                                    </NativeSelectOption>
+                                  ))}
+                                </NativeSelect>
+                                <NativeSelect
+                                  aria-label="按星期筛选"
+                                  className="w-full [&>select]:h-11"
+                                  onChange={(event) =>
+                                    setDay(event.target.value)
+                                  }
+                                  value={day}
+                                >
+                                  <NativeSelectOption value="全部星期">
+                                    全部星期
+                                  </NativeSelectOption>
+                                  {DAYS.map((item) => (
+                                    <NativeSelectOption key={item} value={item}>
+                                      {item}
+                                    </NativeSelectOption>
+                                  ))}
+                                </NativeSelect>
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                        <div className="filter-bottom-row">
+                          <div className="catalog-scope" aria-label="课程范围">
+                            <button
+                              type="button"
+                              aria-pressed={
+                                !onlySelected && planScope === 'all'
+                              }
+                              onClick={() =>
+                                patchCatalog({
+                                  scope: 'all',
+                                  onlySelected: false,
+                                })
+                              }
+                            >
+                              全部课程
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={
+                                !onlySelected && planScope === 'core'
+                              }
+                              onClick={() =>
+                                patchCatalog({
+                                  scope: 'core',
+                                  onlySelected: false,
+                                })
+                              }
+                            >
+                              本方案核心课
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={
+                                !onlySelected && planScope === 'professional'
+                              }
+                              onClick={() =>
+                                patchCatalog({
+                                  scope: 'professional',
+                                  onlySelected: false,
+                                })
+                              }
+                            >
+                              本方案专业课
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={onlySelected}
+                              onClick={showSelectedCourses}
+                            >
+                              已选 <b>{selectedCourses.length}</b>
+                            </button>
+                          </div>
+                          <label className="conflict-filter">
+                            <input
+                              type="checkbox"
+                              checked={onlyNoConflict}
+                              onChange={(event) =>
+                                setOnlyNoConflict(event.target.checked)
+                              }
+                            />
+                            避开已知时间冲突
+                          </label>
+                        </div>
+                        {!onlySelected && activeFilterChips.length > 0 && (
+                          <div
+                            className="active-filters"
+                            aria-label="已启用的筛选条件"
+                          >
+                            {activeFilterChips.map((chip) => (
+                              <button
+                                key={chip.label}
+                                type="button"
+                                onClick={chip.clear}
+                                aria-label={'取消筛选：' + chip.label}
+                              >
+                                {chip.label}
+                                <X />
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className="reset-filters"
+                              onClick={clearFilters}
+                            >
+                              重置筛选
+                            </button>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  )}
 
-                  {visibleCount < filteredCourses.length && (
-                    <div className="mt-6 flex justify-center">
-                      <Button
-                        className="h-11 rounded-xl px-6"
-                        onClick={() =>
-                          setPagination({ key: paginationKey, count: visibleCount + PAGE_SIZE })
-                        }
-                        variant="outline"
-                      >
-                        <ChevronDown /> 显示更多课程
-                      </Button>
-                    </div>
+                      {catalogNavigation.returnBrowse && !onlySelected && (
+                        <p className="browse-return-note">
+                          正在查看培养方案对应课程。
+                          <button
+                            type="button"
+                            onClick={() => dispatchCatalog({ type: 'return' })}
+                          >
+                            返回之前的目录
+                          </button>
+                        </p>
+                      )}
+                      {onlySelected && (
+                        <p className="browse-return-note">
+                          正在查看全部已选课程，目录筛选已暂时绕开。
+                          <button type="button" onClick={showCatalog}>
+                            返回原课程目录
+                          </button>
+                        </p>
+                      )}
+                      {onlyNoConflict && !onlySelected && (
+                        <p className="browse-return-note">
+                          仅排除已知排课冲突；时间待确认的课程仍需人工核对。
+                        </p>
+                      )}
+                      {onlySelected && selectedCourses.length > 0 && (
+                        <div className="selected-toolbar">
+                          <Button
+                            variant="outline"
+                            onClick={() => setTimetableOpen(true)}
+                          >
+                            <CalendarDays />
+                            查看课表
+                          </Button>
+                          <Button variant="outline" onClick={exportSelected}>
+                            <Download />
+                            导出 CSV
+                          </Button>
+                          {
+                            <Button
+                              variant="outline"
+                              onClick={() => setRecommendationDialogOpen(true)}
+                            >
+                              <Sparkles />
+                              补充建议
+                            </Button>
+                          }
+                          <Button
+                            variant="ghost"
+                            className="text-rose-700"
+                            onClick={() => setClearDialogOpen(true)}
+                          >
+                            <Trash2 />
+                            清空本学期
+                          </Button>
+                        </div>
+                      )}
+                      {filteredCourses.length ? (
+                        <div
+                          className={`catalog-grid catalog-compact catalog-${catalogLayout}`}
+                        >
+                          {filteredCourses
+                            .slice(0, visibleCount)
+                            .map((course) => {
+                              const selected = selectedIds.includes(course.id);
+                              const conflict =
+                                selected && conflictingIds.has(course.id);
+                              const peers = selected
+                                ? (conflictPeers.get(course.id) ?? [])
+                                : selectedCourses.filter(
+                                    (other) =>
+                                      courseFamilyKey(other) !==
+                                        courseFamilyKey(course) &&
+                                      coursesConflict(course, other),
+                                  );
+                              return (
+                                <article
+                                  className={`course-card ${selected ? 'course-card-selected' : ''} ${conflict ? 'course-card-conflict' : ''}`}
+                                  key={course.id}
+                                  data-recent-selection={
+                                    selected &&
+                                    undoSelection?.termId === activeTermId &&
+                                    !undoSelection.ids.includes(course.id)
+                                      ? ''
+                                      : undefined
+                                  }
+                                >
+                                  <div className="course-card-heading">
+                                    <h3>
+                                      <button
+                                        className="course-title"
+                                        onClick={() => setDetailCourse(course)}
+                                        type="button"
+                                      >
+                                        {course.name}
+                                      </button>
+                                    </h3>
+                                    <div className="course-credit">
+                                      <strong>
+                                        {formatCredits(course.credits)}
+                                      </strong>
+                                      <span>学分</span>
+                                    </div>
+                                  </div>
+                                  <div className="course-tags">
+                                    <Badge variant="secondary">
+                                      {course.category}
+                                    </Badge>
+                                    {course.scheduleStatus === 'planned' && (
+                                      <Badge
+                                        className="bg-amber-50 text-amber-700"
+                                        variant="secondary"
+                                      >
+                                        春季计划课程
+                                      </Badge>
+                                    )}
+                                    {!isCourseApplicableToPlan(
+                                      course,
+                                      activePlan,
+                                    ) && (
+                                      <Badge
+                                        className="bg-slate-100 text-slate-600"
+                                        variant="secondary"
+                                      >
+                                        当前培养类型不适用
+                                      </Badge>
+                                    )}
+                                    {activePlan.coreCourses.includes(
+                                      course.name,
+                                    ) ? (
+                                      <Badge
+                                        className="bg-indigo-50 text-indigo-700"
+                                        variant="secondary"
+                                      >
+                                        方案核心课
+                                      </Badge>
+                                    ) : activePlan.professionalCourses.includes(
+                                        course.name,
+                                      ) ? (
+                                      <Badge
+                                        className="bg-indigo-50 text-indigo-700"
+                                        variant="secondary"
+                                      >
+                                        方案专业课
+                                      </Badge>
+                                    ) : null}
+                                    {isInnovationCourse(course) && (
+                                      <Badge variant="secondary">
+                                        创新创业
+                                      </Badge>
+                                    )}
+                                    {selected && (
+                                      <Badge variant="secondary">
+                                        {designationLabel(
+                                          courseDesignation(course),
+                                        )}
+                                      </Badge>
+                                    )}
+                                    {selected &&
+                                      courseDesignation(course) ===
+                                        'degree' && (
+                                        <Badge variant="outline">
+                                          {recognitionStatusLabel(
+                                            getCourseRoleEligibility(
+                                              course,
+                                              activePlan,
+                                            ).status,
+                                          )}
+                                        </Badge>
+                                      )}
+                                  </div>
+                                  <div className="course-divider my-3.5 h-px bg-slate-100" />
+                                  <div className="course-people grid grid-cols-2 gap-3 text-sm">
+                                    <div className="info-pair">
+                                      <Users />
+                                      <span>
+                                        <strong>{course.teacher}</strong>
+                                        <small>任课教师</small>
+                                      </span>
+                                    </div>
+                                    <div className="info-pair">
+                                      <GraduationCap />
+                                      <span>
+                                        <strong>{course.subject}</strong>
+                                        <small>{course.college}</small>
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="course-extra mt-4">
+                                    <span>
+                                      <ClipboardCheck />{' '}
+                                      {course.examMode || '考试方式待定'}
+                                    </span>
+                                    <span>
+                                      <Presentation />{' '}
+                                      {course.teachingMode || '授课方式待定'}
+                                    </span>
+                                    <span>
+                                      <Clock3 /> {course.hours || '学时待定'}
+                                    </span>
+                                  </div>
+                                  {peers.length > 0 && (
+                                    <div className="course-conflict-note">
+                                      <Zap />
+                                      <span>
+                                        与{' '}
+                                        {peers
+                                          .map((peer) => peer.name)
+                                          .join('、')}{' '}
+                                        的上课时间冲突
+                                      </span>
+                                    </div>
+                                  )}
+                                  <div className="course-time-block">
+                                    <div className="course-schedule-label">
+                                      <CalendarDays aria-hidden="true" />
+                                      上课安排
+                                    </div>
+                                    {course.schedules.length ? (
+                                      <>
+                                        <ScheduleLines
+                                          schedules={course.schedules.slice(
+                                            0,
+                                            1,
+                                          )}
+                                        />
+                                        {course.schedules.length > 1 && (
+                                          <details className="schedule-more">
+                                            <summary>
+                                              另有 {course.schedules.length - 1}{' '}
+                                              组安排
+                                            </summary>
+                                            <ScheduleLines
+                                              schedules={course.schedules.slice(
+                                                1,
+                                              )}
+                                            />
+                                          </details>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="text-sm text-amber-700">
+                                        上课时间待确认
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="course-enrollment">
+                                    {formatEnrollment(course)}
+                                  </div>
+                                  <div className="course-card-footer">
+                                    <button
+                                      className="course-detail-link"
+                                      type="button"
+                                      onClick={() => setDetailCourse(course)}
+                                    >
+                                      课程详情
+                                      <ArrowRight />
+                                    </button>
+                                    <Button
+                                      disabled={!storageReady}
+                                      variant={selected ? 'outline' : 'default'}
+                                      aria-pressed={selected}
+                                      aria-label={
+                                        (selected ? '移除' : '选择') +
+                                        course.name
+                                      }
+                                      onClick={() => toggleCourse(course.id)}
+                                    >
+                                      {selected ? <CheckCircle2 /> : <Plus />}
+                                      {selected ? '已选 · 移除' : '加入课表'}
+                                    </Button>
+                                  </div>
+                                </article>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        <div className="empty-state">
+                          <SlidersHorizontal />
+                          <h3>
+                            {!initialCourses.length
+                              ? '本学期尚未载入课程数据'
+                              : onlySelected && !selectedCourses.length
+                                ? '还没有选择课程'
+                                : '没有找到匹配课程'}
+                          </h3>
+                          <p>
+                            {initialCourses.length
+                              ? onlySelected && !selectedCourses.length
+                                ? '切换到全部课程，找到想学的课程后点击「加入课表」。'
+                                : '试试缩短关键词，或取消上方的筛选条件。'
+                              : '请在“数据管理”中导入本学期课程 JSON；当前学期的选课记录会独立保存。'}
+                          </p>
+                          <div className="flex flex-wrap justify-center gap-2">
+                            <Button
+                              onClick={
+                                onlySelected ? showCatalog : clearFilters
+                              }
+                              variant="outline"
+                            >
+                              {onlySelected && !selectedCourses.length
+                                ? '浏览全部课程'
+                                : '重置筛选'}
+                            </Button>
+                            {!initialCourses.length && (
+                              <Button
+                                onClick={() => setView('data')}
+                                variant="outline"
+                              >
+                                打开数据管理
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {visibleCount < filteredCourses.length && (
+                        <div className="mt-6 flex justify-center">
+                          <Button
+                            className="h-11 rounded-xl px-6"
+                            onClick={() =>
+                              patchCatalog({
+                                visibleCount: visibleCount + PAGE_SIZE,
+                              })
+                            }
+                            variant="outline"
+                          >
+                            <ChevronDown /> 显示更多课程
+                          </Button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </section>
               ) : view === 'data' ? (
@@ -3821,12 +4622,28 @@ export default function CourseExplorer({
                               </NativeSelectOption>
                             </NativeSelect>
                           </div>
-                          <NativeSelect aria-label="历史课程培养层次" value={historyDraft.level}
-                            onChange={(event) => setHistoryDraft(current => ({ ...current, level: event.target.value }))}>
-                            <NativeSelectOption value="">培养层次未知（或按匹配课程）</NativeSelectOption>
-                            <NativeSelectOption value="硕士课程">硕士专属课程</NativeSelectOption>
-                            <NativeSelectOption value="硕博通用课程">硕博通用课程</NativeSelectOption>
-                            <NativeSelectOption value="博士课程">博士课程</NativeSelectOption>
+                          <NativeSelect
+                            aria-label="历史课程培养层次"
+                            value={historyDraft.level}
+                            onChange={(event) =>
+                              setHistoryDraft((current) => ({
+                                ...current,
+                                level: event.target.value,
+                              }))
+                            }
+                          >
+                            <NativeSelectOption value="">
+                              培养层次未知（或按匹配课程）
+                            </NativeSelectOption>
+                            <NativeSelectOption value="硕士课程">
+                              硕士专属课程
+                            </NativeSelectOption>
+                            <NativeSelectOption value="硕博通用课程">
+                              硕博通用课程
+                            </NativeSelectOption>
+                            <NativeSelectOption value="博士课程">
+                              博士课程
+                            </NativeSelectOption>
                           </NativeSelect>
                           <Button
                             className="mt-2 h-9 w-full"
@@ -3834,39 +4651,118 @@ export default function CourseExplorer({
                           >
                             <ClipboardList /> 添加历史记录
                           </Button>
-                          {historyToVerify.length > 0 && <div className="my-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6">
-                            <h5 className="font-semibold text-amber-800">旧数据核验清单 · {historyToVerify.length} 项</h5>
-                            <p className="text-xs text-slate-600">请依据原始材料补充，不要猜测。修改后统计自动更新，原记录不会被删除。</p>
-                            <ul className="mt-2 space-y-2">{historyToVerify.map(record => <li key={record.id}>
-                              <a className="font-medium text-blue-800 underline" href={`#history-record-${record.id}`}>{record.courseName || '未命名历史课程'}</a>
-                              <p className="text-xs text-amber-800">{isAttendanceRecord(record) ? (!lectureAcademicYear(record.term) ? '学年缺失：补充学年后才能正确汇总预计讲座学分。' : '旧讲座换算：请核对教务认定结果；原小数学分不直接作为已修。') : '专业课程层次待核验：在下方补充层次后重新判断博士培养学分。'}</p>
-                            </li>)}</ul>
-                          </div>}
+                          {historyToVerify.length > 0 && (
+                            <div className="my-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6">
+                              <h5 className="font-semibold text-amber-800">
+                                旧数据核验清单 · {historyToVerify.length} 项
+                              </h5>
+                              <p className="text-xs text-slate-600">
+                                请依据原始材料补充，不要猜测。修改后统计自动更新，原记录不会被删除。
+                              </p>
+                              <ul className="mt-2 space-y-2">
+                                {historyToVerify.map((record) => (
+                                  <li key={record.id}>
+                                    <a
+                                      className="font-medium text-blue-800 underline"
+                                      href={`#history-record-${record.id}`}
+                                    >
+                                      {record.courseName || '未命名历史课程'}
+                                    </a>
+                                    <p className="text-xs text-amber-800">
+                                      {isAttendanceRecord(record)
+                                        ? !lectureAcademicYear(record.term)
+                                          ? '学年缺失：补充学年后才能正确汇总预计讲座学分。'
+                                          : '旧讲座换算：请核对教务认定结果；原小数学分不直接作为已修。'
+                                        : '专业课程层次待核验：在下方补充层次后重新判断博士培养学分。'}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                           {historicalRecords.length > 0 && (
                             <div className="history-record-list mt-2">
                               {historicalRecords.map((record) => (
-                                <div key={record.id} id={`history-record-${record.id}`}>
+                                <div
+                                  key={record.id}
+                                  id={`history-record-${record.id}`}
+                                >
                                   <span>
                                     {record.courseName || '分类学分'} ·{' '}
                                     {record.term}
                                   </span>
-                                  <b>{isAttendanceRecord(record)
-                                    ? `${record.hours ?? (record.attendanceCount ?? 0) * 2} 学时 · ${record.lectureStatus === 'recognized' ? '已登记认定' : '待学年结束认定'}${record.lectureStatus === undefined ? '（保留旧换算值，未直接计分）' : ''}`
-                                    : `${formatCredits(record.credits)} 学分`}</b>
-                                  {isAttendanceRecord(record) && !lectureAcademicYear(record.term) && <Input aria-label={`${record.courseName}记录学年`} placeholder="如2026-2027" defaultValue={record.term}
-                                    onBlur={(event) => {
-                                      if (lectureAcademicYear(event.target.value)) setHistoricalRecords(current => current.map(item => item.id === record.id ? { ...item, term: event.target.value, lectureStatus: 'attendance' } : item));
-                                    }} />}
-                                  {doctoralProfessionalLevel(historicalCourseLike(record), activePlan) !== 'eligible' && (
-                                    <span className="text-xs text-amber-700">未计入博士培养：{record.level || '层次待核验'}</span>
+                                  <b>
+                                    {isAttendanceRecord(record)
+                                      ? `${record.hours ?? (record.attendanceCount ?? 0) * 2} 学时 · ${record.lectureStatus === 'recognized' ? '已登记认定' : '待学年结束认定'}${record.lectureStatus === undefined ? '（保留旧换算值，未直接计分）' : ''}`
+                                      : `${formatCredits(record.credits)} 学分`}
+                                  </b>
+                                  {isAttendanceRecord(record) &&
+                                    !lectureAcademicYear(record.term) && (
+                                      <Input
+                                        aria-label={`${record.courseName}记录学年`}
+                                        placeholder="如2026-2027"
+                                        defaultValue={record.term}
+                                        onBlur={(event) => {
+                                          if (
+                                            lectureAcademicYear(
+                                              event.target.value,
+                                            )
+                                          )
+                                            setHistoricalRecords((current) =>
+                                              current.map((item) =>
+                                                item.id === record.id
+                                                  ? {
+                                                      ...item,
+                                                      term: event.target.value,
+                                                      lectureStatus:
+                                                        'attendance',
+                                                    }
+                                                  : item,
+                                              ),
+                                            );
+                                        }}
+                                      />
+                                    )}
+                                  {doctoralProfessionalLevel(
+                                    historicalCourseLike(record),
+                                    activePlan,
+                                  ) !== 'eligible' && (
+                                    <span className="text-xs text-amber-700">
+                                      未计入博士培养：
+                                      {record.level || '层次待核验'}
+                                    </span>
                                   )}
-                                  {!isAttendanceRecord(record) && <NativeSelect aria-label={`${record.courseName}历史培养层次`} value={record.level ?? ''}
-                                    onChange={(event) => setHistoricalRecords(current => current.map(item => item.id === record.id ? { ...item, level: event.target.value } : item))}>
-                                    <NativeSelectOption value="">层次未知/按编码</NativeSelectOption>
-                                    <NativeSelectOption value="硕士课程">硕士专属</NativeSelectOption>
-                                    <NativeSelectOption value="硕博通用课程">硕博通用</NativeSelectOption>
-                                    <NativeSelectOption value="博士课程">博士</NativeSelectOption>
-                                  </NativeSelect>}
+                                  {!isAttendanceRecord(record) && (
+                                    <NativeSelect
+                                      aria-label={`${record.courseName}历史培养层次`}
+                                      value={record.level ?? ''}
+                                      onChange={(event) =>
+                                        setHistoricalRecords((current) =>
+                                          current.map((item) =>
+                                            item.id === record.id
+                                              ? {
+                                                  ...item,
+                                                  level: event.target.value,
+                                                }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      <NativeSelectOption value="">
+                                        层次未知/按编码
+                                      </NativeSelectOption>
+                                      <NativeSelectOption value="硕士课程">
+                                        硕士专属
+                                      </NativeSelectOption>
+                                      <NativeSelectOption value="硕博通用课程">
+                                        硕博通用
+                                      </NativeSelectOption>
+                                      <NativeSelectOption value="博士课程">
+                                        博士
+                                      </NativeSelectOption>
+                                    </NativeSelect>
+                                  )}
                                   <button
                                     aria-label={`删除${record.courseName || record.category}历史记录`}
                                     onClick={() =>
@@ -3890,7 +4786,9 @@ export default function CourseExplorer({
                             <h4 className="text-sm font-semibold text-slate-700">
                               讲座学时与学年认定
                             </h4>
-                              <Badge variant="secondary">分学年、分类别累计</Badge>
+                            <Badge variant="secondary">
+                              分学年、分类别累计
+                            </Badge>
                           </div>
                           <div className="mt-2 grid grid-cols-2 gap-2">
                             <NativeSelect
@@ -3929,10 +4827,22 @@ export default function CourseExplorer({
                               value={hiasDraft.attendanceCount}
                             />
                           </div>
-                          <NativeSelect aria-label="讲座类别" value={hiasDraft.kind}
-                            onChange={(event) => setHiasDraft(current => ({ ...current, kind: event.target.value as 'hias' | 'frontier' }))}>
-                            <NativeSelectOption value="hias">HIAS讲堂 · 公共选修</NativeSelectOption>
-                            <NativeSelectOption value="frontier">科学前沿讲座 · 专业非学位</NativeSelectOption>
+                          <NativeSelect
+                            aria-label="讲座类别"
+                            value={hiasDraft.kind}
+                            onChange={(event) =>
+                              setHiasDraft((current) => ({
+                                ...current,
+                                kind: event.target.value as 'hias' | 'frontier',
+                              }))
+                            }
+                          >
+                            <NativeSelectOption value="hias">
+                              HIAS讲堂 · 公共选修
+                            </NativeSelectOption>
+                            <NativeSelectOption value="frontier">
+                              科学前沿讲座 · 专业非学位
+                            </NativeSelectOption>
                           </NativeSelect>
                           <div className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-500">
                             本次学时：
@@ -3946,15 +4856,63 @@ export default function CourseExplorer({
                           >
                             <ClipboardList /> 添加讲座记录
                           </Button>
-                          <p className="mt-2 text-xs text-slate-500">两类讲座不混算，未满20学时不跨学年结转；均不计秋春最低10分。下方“登记认定”仅记录你已获得的教务结果，不是本工具审批。</p>
-                          {lectureProgress.map(group => <div key={group.key} className="mt-2 rounded-lg border bg-white p-3 text-xs leading-6">
-                            <b>{group.year ?? '学年待核验'} · {group.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座'}</b>
-                            <p>{group.hours} 学时 · 预计可认定 {group.estimatedCredits} 分 · 已登记认定 {group.recognizedCredits} 分</p>
-                            {group.legacy && <p className="text-amber-700">含旧版换算记录：原值保留，不再直接按小数学分累计，请核实学年和认定结果。</p>}
-                            <Button size="sm" variant="outline" disabled={!group.year || group.estimatedCredits === group.recognizedCredits}
-                              onClick={() => setLectureConfirmation({ key: group.key, revoke: false })}>登记学年结束后的认定结果</Button>
-                            {group.recognizedCredits > 0 && <Button size="sm" variant="ghost" onClick={() => setLectureConfirmation({ key: group.key, revoke: true })}>撤回认定登记</Button>}
-                          </div>)}
+                          <p className="mt-2 text-xs text-slate-500">
+                            两类讲座不混算，未满20学时不跨学年结转；均不计秋春最低10分。下方“登记认定”仅记录你已获得的教务结果，不是本工具审批。
+                          </p>
+                          {lectureProgress.map((group) => (
+                            <div
+                              key={group.key}
+                              className="mt-2 rounded-lg border bg-white p-3 text-xs leading-6"
+                            >
+                              <b>
+                                {group.year ?? '学年待核验'} ·{' '}
+                                {group.kind === 'hias'
+                                  ? 'HIAS讲堂'
+                                  : '科学前沿讲座'}
+                              </b>
+                              <p>
+                                {group.hours} 学时 · 预计可认定{' '}
+                                {group.estimatedCredits} 分 · 已登记认定{' '}
+                                {group.recognizedCredits} 分
+                              </p>
+                              {group.legacy && (
+                                <p className="text-amber-700">
+                                  含旧版换算记录：原值保留，不再直接按小数学分累计，请核实学年和认定结果。
+                                </p>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={
+                                  !group.year ||
+                                  group.estimatedCredits ===
+                                    group.recognizedCredits
+                                }
+                                onClick={() =>
+                                  setLectureConfirmation({
+                                    key: group.key,
+                                    revoke: false,
+                                  })
+                                }
+                              >
+                                登记学年结束后的认定结果
+                              </Button>
+                              {group.recognizedCredits > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    setLectureConfirmation({
+                                      key: group.key,
+                                      revoke: true,
+                                    })
+                                  }
+                                >
+                                  撤回认定登记
+                                </Button>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     </article>
@@ -4025,18 +4983,27 @@ export default function CourseExplorer({
                         <span>预计累计</span>
                         <strong>
                           {formatCredits(programCreditSummary.estimatedCredits)}{' '}
-                          <small>{activePlan.totalCredits === null ? ' 学分 · 总要求待核验' : `/ ${activePlan.totalCredits} 学分`}</small>
+                          <small>
+                            {activePlan.totalCredits === null
+                              ? ' 学分 · 总要求待核验'
+                              : `/ ${activePlan.totalCredits} 学分`}
+                          </small>
                         </strong>
                         <span>
-                          {activePlan.totalCredits === null ? '请结合培养类型核对学院完整要求' : programCreditSummary.estimatedCredits >=
-                          activePlan.totalCredits
-                            ? '总量已够，仍需核对分类与门数'
-                            : `总量还差 ${formatCredits(activePlan.totalCredits - programCreditSummary.estimatedCredits)} 学分`}
+                          {activePlan.totalCredits === null
+                            ? '请结合培养类型核对学院完整要求'
+                            : programCreditSummary.estimatedCredits >=
+                                activePlan.totalCredits
+                              ? '总量已够，仍需核对分类与门数'
+                              : `总量还差 ${formatCredits(activePlan.totalCredits - programCreditSummary.estimatedCredits)} 学分`}
                         </span>
                       </div>
                       <p className="program-credit-sources">
                         <span>
-                          已修 {formatCredits(programCreditSummary.historicalCredits)}
+                          已修{' '}
+                          {formatCredits(
+                            programCreditSummary.historicalCredits,
+                          )}
                         </span>
                         <span>
                           各学期已选/计划{' '}
@@ -4071,7 +5038,10 @@ export default function CourseExplorer({
                     )}
 
                     {programChecks.length > 0 && (
-                      <div className="mb-5 space-y-2" aria-label="培养方案体检结果">
+                      <div
+                        className="mb-5 space-y-2"
+                        aria-label="培养方案体检结果"
+                      >
                         {programChecks.map((check) => {
                           const tone =
                             check.severity === 'must_handle'
@@ -4086,7 +5056,10 @@ export default function CourseExplorer({
                                 ? '待确认事项'
                                 : '培养方案进度';
                           return (
-                            <div className={`rounded-xl border px-3 py-2.5 text-sm leading-6 ${tone}`} key={check.id}>
+                            <div
+                              className={`rounded-xl border px-3 py-2.5 text-sm leading-6 ${tone}`}
+                              key={check.id}
+                            >
                               <div className="font-semibold">
                                 {prefix} · {check.label}
                               </div>
@@ -4120,7 +5093,10 @@ export default function CourseExplorer({
                       <h3>
                         分类学分 <small>预计累计 / 要求</small>
                       </h3>
-                      <p className="mt-2 text-xs leading-5 text-slate-500">历史已修 + 各学期预选/计划 + 不重复的免修资格 = 预计累计。展开明细可核对来源；春季计划不等于已正式开课或已修完成。</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        历史已修 + 各学期预选/计划 + 不重复的免修资格 =
+                        预计累计。展开明细可核对来源；春季计划不等于已正式开课或已修完成。
+                      </p>
                       <div className="requirement-grid mt-3">
                         {[
                           [
@@ -4172,26 +5148,80 @@ export default function CourseExplorer({
                           >
                             <span>{label}</span>
                             <strong>{value}</strong>
-                            <CreditDetails label={label} entries={programCreditSummary.entries} termFor={entry => entry.term || (entry.origin === 'exemption' ? '培养累计；仅贡献秋季最低学分' : availableDatasets.filter(dataset => dataset.courses.some(course => course.id === entry.course.id)).map(dataset => dataset.label).join('、') || '学期待核对')} />
+                            <CreditDetails
+                              label={label}
+                              entries={programCreditSummary.entries}
+                              termFor={(entry) =>
+                                entry.term ||
+                                (entry.origin === 'exemption'
+                                  ? '培养累计；仅贡献秋季最低学分'
+                                  : availableDatasets
+                                      .filter((dataset) =>
+                                        dataset.courses.some(
+                                          (course) =>
+                                            course.id === entry.course.id,
+                                        ),
+                                      )
+                                      .map((dataset) => dataset.label)
+                                      .join('、') || '学期待核对')
+                              }
+                            />
                             {label === '专业学位课' &&
-                              programCreditSummary.approvalRequiredDegreeCredits > 0 && (
+                              programCreditSummary.approvalRequiredDegreeCredits >
+                                0 && (
                                 <small className="text-xs leading-5 text-amber-700">
-                                  已确认 {formatCredits(programCreditSummary.professionalDegreeCredits)}{' '}
-                                  / {formatCredits(activePlan.degreeCourseCredits)} 学分；非本专业的专业类课程 +{formatCredits(programCreditSummary.approvalRequiredDegreeCredits)}{' '}
-                                  学分，规划合计 {formatCredits(programCreditSummary.professionalDegreeCreditsWithApproval)}{' '}
+                                  已确认{' '}
+                                  {formatCredits(
+                                    programCreditSummary.professionalDegreeCredits,
+                                  )}{' '}
+                                  /{' '}
+                                  {formatCredits(
+                                    activePlan.degreeCourseCredits,
+                                  )}{' '}
+                                  学分；非本专业的专业类课程 +
+                                  {formatCredits(
+                                    programCreditSummary.approvalRequiredDegreeCredits,
+                                  )}{' '}
+                                  学分，规划合计{' '}
+                                  {formatCredits(
+                                    programCreditSummary.professionalDegreeCreditsWithApproval,
+                                  )}{' '}
                                   学分（待确认，不触发培养要求完成）
                                 </small>
                               )}
                           </div>
                         ))}
                       </div>
-                      {allSelectedCourses.some(course => !isCourseApplicable(course, activePlan)) && <details className="mt-3 text-sm">
-                        <summary className="cursor-pointer text-amber-800">查看未计入培养累计的已选课程</summary>
-                        <ul className="mt-2 space-y-2">{allSelectedCourses.filter(course => !isCourseApplicable(course, activePlan)).map(course => <li key={course.id}>
-                          <b>{course.name}</b> · 未计入 {formatCredits(course.credits)} 学分
-                          <p className="text-xs text-slate-600">{doctoralProfessionalLevel(course, activePlan) === 'verification' ? '专业课程层次缺失或冲突，请核对材料。' : '课程培养层次或适用学生类别不符合当前培养方向；已选记录保留，不等于禁止修读。'}</p>
-                        </li>)}</ul>
-                      </details>}
+                      {allSelectedCourses.some(
+                        (course) => !isCourseApplicable(course, activePlan),
+                      ) && (
+                        <details className="mt-3 text-sm">
+                          <summary className="cursor-pointer text-amber-800">
+                            查看未计入培养累计的已选课程
+                          </summary>
+                          <ul className="mt-2 space-y-2">
+                            {allSelectedCourses
+                              .filter(
+                                (course) =>
+                                  !isCourseApplicable(course, activePlan),
+                              )
+                              .map((course) => (
+                                <li key={course.id}>
+                                  <b>{course.name}</b> · 未计入{' '}
+                                  {formatCredits(course.credits)} 学分
+                                  <p className="text-xs text-slate-600">
+                                    {doctoralProfessionalLevel(
+                                      course,
+                                      activePlan,
+                                    ) === 'verification'
+                                      ? '专业课程层次缺失或冲突，请核对材料。'
+                                      : '课程培养层次或适用学生类别不符合当前培养方向；已选记录保留，不等于禁止修读。'}
+                                  </p>
+                                </li>
+                              ))}
+                          </ul>
+                        </details>
+                      )}
                       {(activePlan.innovationCredits ?? 0) > 0 && (
                         <p className="mt-2 text-xs leading-5 text-slate-500">
                           公共选修体系合计要求{' '}
@@ -4200,15 +5230,18 @@ export default function CourseExplorer({
                               (activePlan.innovationCredits ?? 0),
                           )}{' '}
                           学分 = 普通公共选修{' '}
-                          {formatCredits(publicElectiveTarget ?? 0)}{' '}
-                          学分 + 创新创业{' '}
+                          {formatCredits(publicElectiveTarget ?? 0)} 学分 +
+                          创新创业{' '}
                           {formatCredits(activePlan.innovationCredits ?? 0)}{' '}
                           学分；创新创业已包含在体系合计内，不重复增加。
                         </p>
                       )}
-                      {programCreditSummary.approvalRequiredDegreeCredits > 0 && (
+                      {programCreditSummary.approvalRequiredDegreeCredits >
+                        0 && (
                         <p className="mt-2 text-xs leading-5 text-amber-700">
-                          非本专业的专业类课程可以作为专业学位规划学分补充，但不能替代本人培养方案的核心 2 门和专业 2 门；建议根据学校官网、学院培养方案和教务系统确认是否可以设置为学位课，并与自己的导师确认课程安排是否合理。
+                          非本专业的专业类课程可以作为专业学位规划学分补充，但不能替代本人培养方案的核心
+                          2 门和专业 2
+                          门；建议根据学校官网、学院培养方案和教务系统确认是否可以设置为学位课，并与自己的导师确认课程安排是否合理。
                         </p>
                       )}
                     </div>
@@ -4216,7 +5249,9 @@ export default function CourseExplorer({
 
                   <div className="guide-coverage">
                     <h3>学位课门数要求（各学期规划累计）</h3>
-                    <p className="mb-3 text-xs leading-5 text-slate-500">预选与春季计划不等于已修完成。所有课程安排均建议与自己的导师确认是否合理。</p>
+                    <p className="mb-3 text-xs leading-5 text-slate-500">
+                      预选与春季计划不等于已修完成。所有课程安排均建议与自己的导师确认是否合理。
+                    </p>
                     <div className="degree-rule-grid">
                       {[
                         {
@@ -4238,7 +5273,8 @@ export default function CourseExplorer({
                             </h4>
                             <span
                               className={
-                                rule.minimum !== null && rule.counted >= rule.minimum
+                                rule.minimum !== null &&
+                                rule.counted >= rule.minimum
                                   ? 'rule-met'
                                   : ''
                               }
@@ -4246,10 +5282,10 @@ export default function CourseExplorer({
                               {rule.minimum === null
                                 ? '待学院确认'
                                 : rule.counted >= rule.minimum
-                                ? '门数已满足'
-                                : '尚差 ' +
-                                  (rule.minimum - rule.counted) +
-                                  ' 门'}
+                                  ? '门数已满足'
+                                  : '尚差 ' +
+                                    (rule.minimum - rule.counted) +
+                                    ' 门'}
                             </span>
                           </div>
                           {rule.minimum === null ? (
@@ -4328,7 +5364,9 @@ export default function CourseExplorer({
                                 {dataset.shortLabel || dataset.label}
                               </strong>
                               <span className="text-slate-600">
-                                {courses.map((course) => course.name).join('、')}
+                                {courses
+                                  .map((course) => course.name)
+                                  .join('、')}
                               </span>
                               {dataset.id !== activeTermId && (
                                 <button
@@ -4395,7 +5433,8 @@ export default function CourseExplorer({
                                             已选
                                           </span>
                                         )}
-                                        {course.scheduleStatus === 'planned' && (
+                                        {course.scheduleStatus ===
+                                          'planned' && (
                                           <span className="program-course-selected-label text-amber-700">
                                             春季计划
                                           </span>
@@ -4639,173 +5678,7 @@ export default function CourseExplorer({
                 </section>
               ) : null}
             </TabsContent>
-            {view === 'courses' && (
-              <aside className="selection-sidebar" aria-label="本学期选课方案">
-                <div className="selection-summary-head">
-                  <span>我的预选方案</span>
-                  <span className="local-save-state">
-                    {!storageReady
-                      ? '正在恢复…'
-                      : storageStatus === 'error'
-                        ? '保存失败'
-                        : storageStatus === 'synced'
-                          ? '已同步'
-                          : '已保存在本机'}
-                  </span>
-                </div>
-                <div className="selection-numbers">
-                  <div>
-                    <strong>{formatCredits(selectedCredits)}</strong>
-                    <span>方案学分合计</span>
-                  </div>
-                  <button type="button" onClick={showSelectedCourses}>
-                    <strong>{selectedCourses.length}</strong>
-                    <span>
-                      已选课程 <ArrowRight />
-                    </span>
-                  </button>
-                </div>
-                {englishQualificationCredits > 0 && (
-                  <p className="selection-exemption-note">
-                    <CheckCircle2 />
-                    已含英语免修免考 +
-                    {formatCredits(englishQualificationCredits)} 学分
-                  </p>
-                )}
-                <button
-                  type="button"
-                  className="plan-context-link"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  <GraduationCap />
-                  <span>
-                    {activePlan.label}
-                    <small>
-                      英语免修免考：{englishStatusLabel(englishExemptionStatus)}
-                    </small>
-                  </span>
-                  <Settings2 />
-                </button>
-                {selectedCourses.length ? (
-                  <>
-                    <div className="selection-list-heading">
-                      <h3>已选课程</h3>
-                      <button type="button" onClick={showSelectedCourses}>
-                        查看全部
-                      </button>
-                    </div>
-                    <div className="selection-list">
-                      {selectedCourses.map((course) => (
-                        <div
-                          key={course.id}
-                          data-recent-selection={
-                            undoSelection?.termId === activeTermId &&
-                            !undoSelection.ids.includes(course.id)
-                              ? ''
-                              : undefined
-                          }
-                          className={
-                            conflictingIds.has(course.id) ? 'has-conflict' : ''
-                          }
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setDetailCourse(course)}
-                          >
-                            <strong>{course.name}</strong>
-                            <span>
-                              {formatCredits(course.credits)} 学分 ·{' '}
-                              {course.schedules[0]?.periodText || '时间待定'}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={'移除' + course.name}
-                            onClick={() => toggleCourse(course.id)}
-                          >
-                            <X />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <Collapsible className="credit-details">
-                      <CollapsibleTrigger>
-                        学分分类明细
-                        <ChevronDown />
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <h4>课程类别</h4>
-                        <div className="credit-breakdown">
-                          {selectedCreditBreakdown.map(([label, credits]) => (
-                            <span key={label}>
-                              {label} {formatCredits(credits)}
-                            </span>
-                          ))}
-                        </div>
-                        <h4>培养要求归属</h4>
-                        <div className="credit-breakdown">
-                          {selectedRequirementBreakdown.map(
-                            ([type, credits]) => (
-                              <span key={type}>
-                                {getCourseRequirementTypeLabel(type)}{' '}
-                                {formatCredits(credits)}
-                              </span>
-                            ),
-                          )}
-                        </div>
-                        {creditSummary.duplicatePlannedCourseCount > 0 && (
-                          <p>
-                            有 {creditSummary.duplicatePlannedCourseCount}{' '}
-                            门已修课程，已避免重复计分。
-                          </p>
-                        )}
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </>
-                ) : (
-                  <div className="selection-empty">
-                    <CalendarDays />
-                    <p>把想学的课程加入课表</p>
-                    <span>这里会实时汇总学分与安排</span>
-                  </div>
-                )}
-                <div className="selection-actions">
-                  <Button onClick={() => setTimetableOpen(true)}>
-                    <CalendarDays />
-                    查看我的课表
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={!selectedCourses.length}
-                    onClick={exportSelected}
-                  >
-                    <Download />
-                    导出课表 CSV
-                  </Button>
-                </div>
-                <p className="export-hint">CSV 可导入 WakeUp 课程表</p>
-                {(
-                    <button
-                      type="button"
-                      className="recommendation-link"
-                      onClick={() => setRecommendationDialogOpen(true)}
-                    >
-                      <Sparkles />
-                      智能补全方案
-                      <ArrowRight />
-                    </button>
-                  )}
-                <button
-                  type="button"
-                  className="clear-selection"
-                  disabled={!selectedCourses.length}
-                  onClick={() => setClearDialogOpen(true)}
-                >
-                  <Trash2 />
-                  清空当前学期
-                </button>
-              </aside>
-            )}
+            {view === 'courses' && selectionPanel}
           </div>
         </Tabs>
 
@@ -4835,26 +5708,43 @@ export default function CourseExplorer({
       </div>
 
       <div className="mobile-selection-bar" aria-label="选课快捷操作">
-        <button type="button" onClick={showSelectedCourses}>
-          <Star />
-          <span>
-            已选 {selectedCourses.length} 门
-            <strong>{formatCredits(selectedCredits)} 学分</strong>
-          </span>
-        </button>
-        <Button onClick={() => setTimetableOpen(true)}>
-          <CalendarDays />
-          课表
-        </Button>
-        <Button
-          variant="outline"
-          disabled={!selectedCourses.length}
-          onClick={exportSelected}
-          aria-label="导出课表 CSV"
+        <button
+          type="button"
+          aria-pressed={view === 'courses' && workspaceMode === 'catalog'}
+          onClick={showCatalog}
         >
-          <Download />
-        </Button>
+          <BookOpen aria-hidden="true" />
+          <span>选课程</span>
+        </button>
+        <button type="button" onClick={() => setMobilePlanOpen(true)}>
+          <ClipboardList aria-hidden="true" />
+          <span>方案 · {selectedCourses.length} 门</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === 'courses' && workspaceMode === 'timetable'}
+          onClick={showTimetable}
+        >
+          <CalendarDays aria-hidden="true" />
+          <span>我的课表</span>
+        </button>
       </div>
+      <Sheet open={mobilePlanOpen} onOpenChange={setMobilePlanOpen}>
+        <SheetContent
+          className="mobile-plan-sheet w-full sm:max-w-md overflow-y-auto"
+          side="right"
+        >
+          <SheetHeader>
+            <SheetTitle>我的预选方案</SheetTitle>
+            <SheetDescription>
+              当前学期课程、有效学分与培养检查
+            </SheetDescription>
+          </SheetHeader>
+          <div className="course-app workspace-redesigned">
+            {selectionPanel}
+          </div>
+        </SheetContent>
+      </Sheet>
       {selectionMessage && (
         <div className="selection-toast" key={selectionMessage}>
           <output>{selectionMessage}</output>
@@ -5006,13 +5896,19 @@ export default function CourseExplorer({
                 setEnglishStatus(value === 'approved' ? 'approved' : 'normal')
               }
             >
-              <label className="settings-qualification-option" htmlFor="english-normal">
+              <label
+                className="settings-qualification-option"
+                htmlFor="english-normal"
+              >
                 <RadioGroupItem id="english-normal" value="normal" />
                 <span>
                   未获得<small>未申请、待审核或未通过审核</small>
                 </span>
               </label>
-              <label className="settings-qualification-option" htmlFor="english-approved">
+              <label
+                className="settings-qualification-option"
+                htmlFor="english-approved"
+              >
                 <RadioGroupItem id="english-approved" value="approved" />
                 <span>
                   已获得<small>学校已审核通过免修免考资格</small>
@@ -5035,27 +5931,58 @@ export default function CourseExplorer({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <FeedbackDialog key={JSON.stringify(feedbackContext)} context={feedbackContext} onClose={() => setFeedbackContext(null)} />
-      <AlertDialog open={lectureConfirmation !== null} onOpenChange={open => { if (!open) setLectureConfirmation(null); }}>
+      <FeedbackDialog
+        key={JSON.stringify(feedbackContext)}
+        context={feedbackContext}
+        onClose={() => setFeedbackContext(null)}
+      />
+      <AlertDialog
+        open={lectureConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open) setLectureConfirmation(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{lectureConfirmation?.revoke ? '撤回认定登记' : '登记教务认定结果'}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {lectureConfirmation?.revoke
+                ? '撤回认定登记'
+                : '登记教务认定结果'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {lectureConfirmation?.revoke ? '撤回本工具中的认定登记，全部学时和原始记录仍保留，不会撤销学校的认定。' : `请确认${confirmingLecture?.year ?? ''}学年已结束，且${confirmingLecture?.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座'}已由教务认定共${confirmingLecture?.estimatedCredits ?? 0}学分。本工具仅登记结果，不提供审批。`}
+              {lectureConfirmation?.revoke
+                ? '撤回本工具中的认定登记，全部学时和原始记录仍保留，不会撤销学校的认定。'
+                : `请确认${confirmingLecture?.year ?? ''}学年已结束，且${confirmingLecture?.kind === 'hias' ? 'HIAS讲堂' : '科学前沿讲座'}已由教务认定共${confirmingLecture?.estimatedCredits ?? 0}学分。本工具仅登记结果，不提供审批。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={!confirmingLecture?.year} onClick={() => {
-              if (!confirmingLecture?.year) return;
-              const status = lectureConfirmation?.revoke ? 'attendance' : 'recognized';
-              setHistoricalRecords(current => current.map(record => confirmingLecture.ids.includes(record.id) ? { ...record, lectureStatus: status } : record));
-              setLectureConfirmation(null);
-            }}>确认{lectureConfirmation?.revoke ? '撤回' : '登记'}</AlertDialogAction>
+            <AlertDialogAction
+              disabled={!confirmingLecture?.year}
+              onClick={() => {
+                if (!confirmingLecture?.year) return;
+                const status = lectureConfirmation?.revoke
+                  ? 'attendance'
+                  : 'recognized';
+                setHistoricalRecords((current) =>
+                  current.map((record) =>
+                    confirmingLecture.ids.includes(record.id)
+                      ? { ...record, lectureStatus: status }
+                      : record,
+                  ),
+                );
+                setLectureConfirmation(null);
+              }}
+            >
+              确认{lectureConfirmation?.revoke ? '撤回' : '登记'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={exportReminderOpen} onOpenChange={setExportReminderOpen}>
+      <AlertDialog
+        open={exportReminderOpen}
+        onOpenChange={setExportReminderOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>导出前请留意课程调整</AlertDialogTitle>
@@ -5063,10 +5990,16 @@ export default function CourseExplorer({
               课程可能因选课人数及其他教学安排调整上课时间和教室。请及时查看任课教师、学院及教务系统的最新通知，并按实际通知的时间和地点上课。
             </AlertDialogDescription>
           </AlertDialogHeader>
-          {roomCorrection.changes.length > 0 && <p className="text-sm text-amber-700">当前仍有旧教室信息，建议返回核对并应用页面上的教室更新后再导出。</p>}
+          {roomCorrection.changes.length > 0 && (
+            <p className="text-sm text-amber-700">
+              当前仍有旧教室信息，建议返回核对并应用页面上的教室更新后再导出。
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>返回核对</AlertDialogCancel>
-            <AlertDialogAction onClick={downloadSelectedCsv}>继续导出</AlertDialogAction>
+            <AlertDialogAction onClick={downloadSelectedCsv}>
+              继续导出
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -5112,7 +6045,7 @@ export default function CourseExplorer({
       >
         <DialogContent className="recommendation-dialog max-w-2xl">
           <DialogHeader>
-          <DialogTitle>优化当前方案</DialogTitle>
+            <DialogTitle>优化当前方案</DialogTitle>
             <DialogDescription>
               {semesterCreditGap > 0
                 ? `当前有效选课学分为 ${formatCredits(semesterEligibleCredits)}，秋季/春季最低要求为 10 学分，还差 ${formatCredits(semesterCreditGap)} 学分。`
@@ -5120,73 +6053,177 @@ export default function CourseExplorer({
             </DialogDescription>
           </DialogHeader>
           <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input type="checkbox" checked={allowCrossMajorRecommendations}
-              onChange={(event) => setAllowCrossMajorRecommendations(event.target.checked)} />
+            <input
+              type="checkbox"
+              checked={allowCrossMajorRecommendations}
+              onChange={(event) =>
+                setAllowCrossMajorRecommendations(event.target.checked)
+              }
+            />
             显示需核对学位属性的跨专业课程（不能替代本专业门数要求）
           </label>
           {recommendationPlans.length ? (
-            <div className="recommendation-dialog-list">
-              {recommendationPlans.map((recommendation) => (
-                <article className="recommendation-row" key={recommendation.id}>
-                  <div>
-                    <strong>{recommendation.label}</strong>
-                    <span>
-                      新增 {recommendation.addedCourses.length} 门 · 本学期总学分{' '}
-                      {formatCredits(recommendation.semesterTotalCredits)}{' '}
-                      · 有效学分{' '}
-                      {formatCredits(recommendation.gaps.semesterCredits)}{recommendation.gaps.semesterMinimumTarget === null ? '（夏季按需求）' : ' / 10'}
-                    </span>
-                    <small>
-                      核心{' '}
-                      {recommendation.gaps.coreTarget === null
-                        ? '待确认'
-                        : `${recommendation.gaps.coreCount}/${recommendation.gaps.coreTarget}`}{' '}
-                      · 专业{' '}
-                      {recommendation.gaps.professionalTarget === null
-                        ? '待确认'
-                        : `${recommendation.gaps.professionalCount}/${recommendation.gaps.professionalTarget}`}{' '}
-                      · 专业学位{' '}
-                      {formatCredits(recommendation.gaps.professionalDegreeCredits)}{' '}
-                      {recommendation.gaps.approvalRequiredDegreeCredits > 0 && (
-                        <>· 非本专业的专业类课程 {formatCredits(recommendation.gaps.approvalRequiredDegreeCredits)} 学分 </>
-                      )}
-                      · 周末课程 {recommendation.metrics.weekendCourseCount} 门
-                    </small>
-                    <small>
-                      培养累计：专业选修 {formatCredits(recommendation.gaps.professionalNonDegreeCredits)}
-                      {' · '}普通公选 {formatCredits(recommendation.gaps.ordinaryPublicElectiveCredits)}
-                      {' · '}创新创业 {formatCredits(recommendation.gaps.innovationCredits)}
-                      {' · '}已知冲突 {recommendation.conflicts} 组
-                    </small>
-                    <small>
-                      本学期负担：闭卷 {recommendation.metrics.closedExamCount} 门 · 报告/论文 {recommendation.metrics.reportCourseCount} 门
-                      {' · '}最高每周 {recommendation.metrics.weeklyDensity} 节（仅按已知排课）
-                    </small>
-                    <small>
-                      {recommendation.addedCourses.length
-                        ? `新增：${recommendation.addedCourses.map((course) => course.name).join('、')}`
-                        : '当前没有可安全补充的课程'}
-                    </small>
-                    {recommendation.candidates.map((item) => (
-                      <div className="mt-2 text-xs leading-5" key={item.course.id}>
-                        <b>{item.course.name}</b> · {item.designation === 'degree' ? '学位课' : '非学位课'}
-                        <p>{item.reasons.join('；')}</p>
-                        {item.verificationReasons.map((reason) => <p className="text-amber-700" key={reason}>{reason}</p>)}
-                      </div>
+            <>
+              <section
+                className="recommendation-comparison"
+                aria-label="补全方案指标比较"
+              >
+                <table>
+                  <caption>
+                    仅比较已有数据；考核类型不代表难度，排课未知仍需核对。
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">方案</th>
+                      <th scope="col">新增</th>
+                      <th scope="col">有效学分</th>
+                      <th scope="col">核心累计</th>
+                      <th scope="col">专业累计</th>
+                      <th scope="col">已知冲突</th>
+                      <th scope="col">闭卷 / 报告</th>
+                      <th scope="col">最高周节数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recommendationPlans.map((plan) => (
+                      <tr key={plan.id}>
+                        <th scope="row">{plan.label}</th>
+                        <td>{plan.addedCourses.length} 门</td>
+                        <td>
+                          {formatCredits(plan.gaps.semesterCredits)} /{' '}
+                          {plan.gaps.semesterMinimumTarget ?? '按需求'}
+                        </td>
+                        <td>
+                          {plan.gaps.coreCount} /{' '}
+                          {plan.gaps.coreTarget ?? '待确认'}
+                        </td>
+                        <td>
+                          {plan.gaps.professionalCount} /{' '}
+                          {plan.gaps.professionalTarget ?? '待确认'}
+                        </td>
+                        <td>{plan.conflicts} 组</td>
+                        <td>
+                          {plan.metrics.closedExamCount} /{' '}
+                          {plan.metrics.reportCourseCount} 门
+                        </td>
+                        <td>{plan.metrics.weeklyDensity} 节</td>
+                      </tr>
                     ))}
-                    {recommendation.remainingIssues.map((issue) => <p className="mt-2 text-xs leading-5 text-amber-700" key={issue}>{issue}</p>)}
-                  </div>
-                  <Button
-                    className="h-9 shrink-0 rounded-lg"
-                    disabled={!recommendation.addedCourses.length}
-                    onClick={() => setPendingRecommendation(recommendation)}
-                    size="sm"
+                  </tbody>
+                </table>
+              </section>
+              <div className="recommendation-dialog-list">
+                {recommendationPlans.map((recommendation) => (
+                  <article
+                    className="recommendation-row"
+                    key={recommendation.id}
                   >
-                    应用方案
-                  </Button>
-                </article>
-              ))}
-            </div>
+                    <div>
+                      <strong>{recommendation.label}</strong>
+                      <span>
+                        新增 {recommendation.addedCourses.length} 门 ·
+                        本学期总学分{' '}
+                        {formatCredits(recommendation.semesterTotalCredits)} ·
+                        有效学分{' '}
+                        {formatCredits(recommendation.gaps.semesterCredits)}
+                        {recommendation.gaps.semesterMinimumTarget === null
+                          ? '（夏季按需求）'
+                          : ' / 10'}
+                      </span>
+                      <details className="recommendation-reasons">
+                        <summary>查看课程理由、培养累计与待核对项</summary>
+                        <small>
+                          核心{' '}
+                          {recommendation.gaps.coreTarget === null
+                            ? '待确认'
+                            : `${recommendation.gaps.coreCount}/${recommendation.gaps.coreTarget}`}{' '}
+                          · 专业{' '}
+                          {recommendation.gaps.professionalTarget === null
+                            ? '待确认'
+                            : `${recommendation.gaps.professionalCount}/${recommendation.gaps.professionalTarget}`}{' '}
+                          · 专业学位{' '}
+                          {formatCredits(
+                            recommendation.gaps.professionalDegreeCredits,
+                          )}{' '}
+                          {recommendation.gaps.approvalRequiredDegreeCredits >
+                            0 && (
+                            <>
+                              · 非本专业的专业类课程{' '}
+                              {formatCredits(
+                                recommendation.gaps
+                                  .approvalRequiredDegreeCredits,
+                              )}{' '}
+                              学分{' '}
+                            </>
+                          )}
+                          · 周末课程 {recommendation.metrics.weekendCourseCount}{' '}
+                          门
+                        </small>
+                        <small>
+                          培养累计：专业选修{' '}
+                          {formatCredits(
+                            recommendation.gaps.professionalNonDegreeCredits,
+                          )}
+                          {' · '}普通公选{' '}
+                          {formatCredits(
+                            recommendation.gaps.ordinaryPublicElectiveCredits,
+                          )}
+                          {' · '}创新创业{' '}
+                          {formatCredits(recommendation.gaps.innovationCredits)}
+                          {' · '}已知冲突 {recommendation.conflicts} 组
+                        </small>
+                        <small>
+                          本学期负担：闭卷{' '}
+                          {recommendation.metrics.closedExamCount} 门 ·
+                          报告/论文 {recommendation.metrics.reportCourseCount}{' '}
+                          门{' · '}最高每周{' '}
+                          {recommendation.metrics.weeklyDensity}{' '}
+                          节（仅按已知排课）
+                        </small>
+                        <small>
+                          {recommendation.addedCourses.length
+                            ? `新增：${recommendation.addedCourses.map((course) => course.name).join('、')}`
+                            : '当前没有可安全补充的课程'}
+                        </small>
+                        {recommendation.candidates.map((item) => (
+                          <div
+                            className="mt-2 text-xs leading-5"
+                            key={item.course.id}
+                          >
+                            <b>{item.course.name}</b> ·{' '}
+                            {item.designation === 'degree'
+                              ? '学位课'
+                              : '非学位课'}
+                            <p>{item.reasons.join('；')}</p>
+                            {item.verificationReasons.map((reason) => (
+                              <p className="text-amber-700" key={reason}>
+                                {reason}
+                              </p>
+                            ))}
+                          </div>
+                        ))}
+                        {recommendation.remainingIssues.map((issue) => (
+                          <p
+                            className="mt-2 text-xs leading-5 text-amber-700"
+                            key={issue}
+                          >
+                            {issue}
+                          </p>
+                        ))}
+                      </details>
+                    </div>
+                    <Button
+                      className="h-9 shrink-0 rounded-lg"
+                      disabled={!recommendation.addedCourses.length}
+                      onClick={() => setPendingRecommendation(recommendation)}
+                      size="sm"
+                    >
+                      应用方案
+                    </Button>
+                  </article>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="recommendation-empty">
               当前没有找到符合培养要求且不与现有课表冲突的补充课程。
@@ -5195,7 +6232,8 @@ export default function CourseExplorer({
 
           <p className="mt-3 text-xs leading-5 text-slate-500">
             当前已选课程默认锁定；应用前会再次确认，不会静默移除或替换。跨专业核心课/专业课可纳入规划学分合计，但不能替代本专业门数要求。请查阅正式材料核对学位属性，所有课程安排均建议与自己的导师确认是否合理。
-            {englishExemptionStatus === 'approved' && ' 英语免修学分计入培养累计；本工具暂不将其计入本学期实际修读的最低10学分，具体口径请向教务确认。'}
+            {englishExemptionStatus === 'approved' &&
+              ' 获准硕士英语免修按现有规则计入培养累计和秋季最低学分，春季不重复增加；不替代博士学位英语。'}
           </p>
 
           <DialogFooter>
@@ -5209,23 +6247,40 @@ export default function CourseExplorer({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={pendingRecommendation !== null} onOpenChange={(open) => { if (!open) setPendingRecommendation(null); }}>
+      <AlertDialog
+        open={pendingRecommendation !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRecommendation(null);
+        }}
+      >
         <AlertDialogContent className="max-h-[85vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>确认应用选课方案</AlertDialogTitle>
             <AlertDialogDescription>
-              保留当前 {selectedCourses.length} 门已选课程。移除 0 门，换班 0 门。
-              新增课程及学位属性如下，请确认后再应用：
+              保留当前 {selectedCourses.length} 门已选课程。移除 0 门，换班 0
+              门。 新增课程及学位属性如下，请确认后再应用：
             </AlertDialogDescription>
           </AlertDialogHeader>
           <ul className="space-y-2 text-sm">
-            {pendingRecommendation?.candidates.map((item) => <li key={item.course.id}>
-              <strong>{item.course.name}</strong> · {item.designation === 'degree' ? '学位课' : '非学位课'}
-            </li>)}
+            {pendingRecommendation?.candidates.map((item) => (
+              <li key={item.course.id}>
+                <strong>{item.course.name}</strong> ·{' '}
+                {item.designation === 'degree' ? '学位课' : '非学位课'}
+              </li>
+            ))}
           </ul>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingRecommendation(null)}>返回预览</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (pendingRecommendation) applyRecommendationPlan(pendingRecommendation); }}>确认新增课程</AlertDialogAction>
+            <AlertDialogCancel onClick={() => setPendingRecommendation(null)}>
+              返回预览
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRecommendation)
+                  applyRecommendationPlan(pendingRecommendation);
+              }}
+            >
+              确认新增课程
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -5241,119 +6296,7 @@ export default function CourseExplorer({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs leading-5 text-slate-500">
-              桌面端横向滚动可查看完整一周；点击课程块可查看课程详情。
-            </p>
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
-              查看周次
-              <NativeSelect
-                aria-label="查看周次"
-                className="min-w-28 [&>select]:h-10"
-                onChange={(event) => setWeek(Number(event.target.value))}
-                value={week}
-              >
-                {Array.from({ length: 20 }, (_, index) => index + 1).map(
-                  (value) => (
-                    <NativeSelectOption key={value} value={value}>
-                      第 {value} 周
-                    </NativeSelectOption>
-                  ),
-                )}
-              </NativeSelect>
-            </label>
-          </div>
-
-          {selectedCourses.length ? (
-            <div className="min-w-0 w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-              {currentWeekConflicts.size > 0 && (
-                <div className="mb-3 flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  <Zap className="size-4" /> 本周有 {currentWeekConflicts.size}{' '}
-                  门课程时间重叠，已用红色标出。
-                </div>
-              )}
-              <div className="w-full min-w-0 overflow-x-auto pb-2">
-                <div className="timetable-grid">
-                  <div className="timetable-corner">节次</div>
-                  {DAYS.map((label, index) => (
-                    <div
-                      className="timetable-day"
-                      key={label}
-                      style={{ gridColumn: index + 2, gridRow: 1 }}
-                    >
-                      {label}
-                    </div>
-                  ))}
-                  {Array.from({ length: 13 }, (_, index) => index + 1).map(
-                    (period) => (
-                      <div
-                        className="timetable-period"
-                        key={period}
-                        style={{ gridColumn: 1, gridRow: period + 1 }}
-                      >
-                        <strong>{period}</strong>
-                        <span>第 {period} 节</span>
-                      </div>
-                    ),
-                  )}
-                  {DAYS.flatMap((_, dayIndex) =>
-                    Array.from({ length: 13 }, (_, index) => index + 1).map(
-                      (period) => (
-                        <div
-                          className="timetable-cell"
-                          key={`${dayIndex}-${period}`}
-                          style={{
-                            gridColumn: dayIndex + 2,
-                            gridRow: period + 1,
-                          }}
-                        />
-                      ),
-                    ),
-                  )}
-                  {selectedCourses.flatMap((course) =>
-                    course.schedules
-                      .filter((schedule) => schedule.weeks.includes(week))
-                      .map((schedule, scheduleIndex) => {
-                        const color = courseColor(course.id);
-                        const conflict = currentWeekConflicts.has(course.id);
-                        return (
-                          <button
-                            className={`timetable-course ${conflict ? 'timetable-course-conflict' : ''}`}
-                            key={`${course.id}-${scheduleIndex}`}
-                            onClick={() => setDetailCourse(course)}
-                            style={{
-                              gridColumn: schedule.dayIndex + 2,
-                              gridRow: `${schedule.start + 1} / ${schedule.end + 2}`,
-                              backgroundColor: conflict ? '#ffe4e6' : color[0],
-                              borderColor: conflict ? '#e11d48' : color[1],
-                              color: conflict ? '#9f1239' : color[1],
-                            }}
-                            type="button"
-                          >
-                            <strong>{course.name}</strong>
-                            <span>{schedule.room}</span>
-                          </button>
-                        );
-                      }),
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <CalendarDays />
-              <h3>课表还是空的</h3>
-              <p>回到课程列表，点击课程卡片右上角的星标即可加入。</p>
-              <Button
-                onClick={() => {
-                  setTimetableOpen(false);
-                  setView('courses');
-                }}
-              >
-                去选择课程
-              </Button>
-            </div>
-          )}
+          {timetableContent}
         </DialogContent>
       </Dialog>
 
@@ -5412,18 +6355,24 @@ export default function CourseExplorer({
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-6 p-6">
-                <Button variant="outline" onClick={() => {
-                  setFeedbackContext({ term: activeDataset.label, courseName: detailCourse.name, courseCode: formatCourseCode(detailCourse) });
-                  setDetailCourse(null);
-                }}>反馈课程信息</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setFeedbackContext({
+                      term: activeDataset.label,
+                      courseName: detailCourse.name,
+                      courseCode: formatCourseCode(detailCourse),
+                    });
+                    setDetailCourse(null);
+                  }}
+                >
+                  反馈课程信息
+                </Button>
                 <div className="grid grid-cols-2 gap-3">
                   {(
                     [
                       ['开课院系', detailCourse.college],
-                      [
-                        '课程编码',
-                        formatCourseCode(detailCourse),
-                      ],
+                      ['课程编码', formatCourseCode(detailCourse)],
                       ['课程属性', detailCourse.category],
                       ['培养层次', detailCourse.level],
                       ['所属学科/专业', detailCourse.subject],
@@ -5448,10 +6397,19 @@ export default function CourseExplorer({
                               .map((schedule) => schedule.room)
                               .filter(Boolean),
                           ),
-                        ].join('、') || (isPlannedCourse(detailCourse) ? '待春季正式课表公布' : '—'),
+                        ].join('、') ||
+                          (isPlannedCourse(detailCourse)
+                            ? '待春季正式课表公布'
+                            : '—'),
                       ],
                       ['授课方式', detailCourse.teachingMode],
-                      ['考试方式', detailCourse.examMode || (isPlannedCourse(detailCourse) ? '待春季正式课表公布' : '—')],
+                      [
+                        '考试方式',
+                        detailCourse.examMode ||
+                          (isPlannedCourse(detailCourse)
+                            ? '待春季正式课表公布'
+                            : '—'),
+                      ],
                       ['首席教授', detailCourse.chiefProfessor],
                       ['主讲教师', detailCourse.teacher],
                       ['助教', detailCourse.assistant],

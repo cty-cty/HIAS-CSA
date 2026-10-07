@@ -2,6 +2,7 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 @import './workspace-polish.css';
+@import './workspace-redesign.css';
 
 @custom-variant dark (&:is(.dark *));
 
